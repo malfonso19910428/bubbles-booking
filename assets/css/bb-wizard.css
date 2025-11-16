@@ -1,0 +1,16 @@
+.bb-layout{display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start}
+@media(max-width:900px){.bb-layout{grid-template-columns:1fr}}
+.bb-sidebar{border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#fff}
+.bb-steps-list{list-style:none;margin:0;padding:0}
+.bb-steps-list li{padding:8px 10px;border-radius:8px;margin-bottom:6px;border:1px solid #e5e7eb}
+.bb-steps-list li.active{border-color:#111;background:#111;color:#fff}
+.bb-steps-list li.done{border-color:#16a34a}
+.bb-panel{border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#fff}
+.bb-section-title{margin-top:0}
+.bb-step-form .bb-actions{display:flex;gap:10px;margin-top:16px}
+.bb-packages{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.bb-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px;display:block}
+.bb-addons{display:grid;gap:12px}
+.bb-addon-card{display:flex;gap:12px;align-items:flex-start;border:1px solid #e5e7eb;border-radius:10px;padding:12px}
+.bb-addon-card h4{margin:0 0 2px;font-size:15px}
+.bb-addon-card p{margin:0;font-size:13px;color:#555}
