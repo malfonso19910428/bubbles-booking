@@ -1,0 +1,62 @@
+# =============================
+# WORDPRESS PLUGIN .gitignore
+# =============================
+
+# --- Archivos del sistema (Windows / Mac) ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Archivos del editor VS Code ---
+.vscode/
+*.code-workspace
+
+# --- Archivos temporales / logs ---
+*.log
+*.tmp
+*.temp
+*.cache
+
+# --- Copias de seguridad ---
+*.bak
+*.old
+*.orig
+
+# --- Archivos ZIP del plugin ---
+*.zip
+*.tar
+*.tar.gz
+
+# --- Archivos creados por FTP/SFTP ---
+*.ftpconfig
+*.ftpignore
+
+# --- Carpetas de dependencias (si usas npm en el futuro) ---
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# --- Entornos locales / variables privadas ---
+.env
+.env.local
+.env.*.local
+
+# --- Archivos de sistema ocultos en Hostinger ---
+.swp
+*.swp
+*.swo
+
+# --- Archivos que no deben subir ---
+*.sql
+*.sqlite
+*.csv
+*.pdf
+
+# --- Archivos de caché de PHP ---
+*.opcache
+*.php~
+
+
+# =============================
+# FINAL
+# =============================
