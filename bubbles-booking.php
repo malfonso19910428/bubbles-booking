@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) exit;
 // ==============================
 define('BB_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BB_PLUGIN_URL', plugin_dir_url(__FILE__));
-
+require_once BB_PLUGIN_DIR . 'includes/catalog/addons-catalog.php';
 // Core
 require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-bookings.php';
 require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-packages.php';

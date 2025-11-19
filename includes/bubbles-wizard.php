@@ -102,6 +102,7 @@ class Bubbles_Wizard {
     }
 
     /* ------------------------- Render principal ------------------------- */
+    /* ------------------------- Render principal ------------------------- */
 
     public function render() {
 
@@ -114,7 +115,9 @@ class Bubbles_Wizard {
         $requested_step = isset($_POST['bb_step']) ? sanitize_text_field($_POST['bb_step']) : 'vehicle';
         $current_step   = in_array($requested_step, $this->steps, true) ? $requested_step : 'vehicle';
 
+        // -------------------------------------------------
         // Validación especial del paso "address"
+        // -------------------------------------------------
         if (
             $_SERVER['REQUEST_METHOD'] === 'POST' &&
             isset($_POST['bb_step']) &&
@@ -125,37 +128,42 @@ class Bubbles_Wizard {
                 $this->errors = array();
             }
 
-            $address_type = trim($this->posted('bb_address_type'));
-            $address      = trim($this->posted('bb_address'));
-            $city         = trim($this->posted('bb_address_city'));
-            $state        = trim($this->posted('bb_address_state'));
+            // Leer el valor del radio
+            $address_type = trim($this->posted('bb_address_type')); // 'home', 'work', 'other' o ''
 
+            // Borrar error viejo si hubiera
             unset($this->errors['address']);
 
+            // 👉 Si NO marcó ningún radio
             if ($address_type === '') {
-                $this->errors['address'] = 'Please select if this is your home, work or other address.';
-            } elseif ($address === '') {
-                $this->errors['address'] = 'Please enter your service address.';
-            } elseif ($city === '' || $state === '') {
-                $this->errors['address'] = 'Please select a complete address from the suggestions.';
-            }
+                $this->errors['address'] = 'Please select if this is your home, work, or other address.';
 
-            if (!empty($this->errors['address'])) {
+                // Mantener al usuario en el paso address
                 $current_step = 'address';
                 unset($_POST['bb_continue']);
             }
         }
 
+        // -------------------------------------------------
         // Validación especial del paso "date"
+        // -------------------------------------------------
         if (
             $_SERVER['REQUEST_METHOD'] === 'POST' &&
             isset($_POST['bb_step']) &&
             $_POST['bb_step'] === 'date' &&
             isset($_POST['bb_continue'])
         ) {
-            $bb_date = isset($_POST['bb_date']) ? sanitize_text_field($_POST['bb_date']) : '';
-            $date_ok = true;
+            if (!is_array($this->errors)) {
+                $this->errors = array();
+            }
 
+            $bb_date = isset($_POST['bb_date']) ? sanitize_text_field($_POST['bb_date']) : '';
+            $bb_time = isset($_POST['bb_time']) ? sanitize_text_field($_POST['bb_time']) : '';
+
+            $date_ok = true;
+            $time_ok = true;
+
+            // Validar fecha
             if (empty($bb_date)) {
                 $date_ok = false;
             } elseif (class_exists('Bubbles_Availability')) {
@@ -170,19 +178,73 @@ class Bubbles_Wizard {
                 }
             }
 
-            if (!$date_ok) {
+            // Validar que haya slot seleccionado
+            if (empty($bb_time)) {
+                $time_ok = false;
+            }
+
+            // Si algo falla, nos quedamos en el paso date
+            if (!$date_ok || !$time_ok) {
                 $current_step = 'date';
-                $this->errors['date'] = __('Please choose a valid working day. Same-day and past dates are not available.', 'bubbles-booking');
+
+                if (!$date_ok) {
+                    $this->errors['date'] = __(
+                        'Please choose a valid working day. Same-day and past dates are not available.',
+                        'bubbles-booking'
+                    );
+                } elseif (!$time_ok) {
+                    $this->errors['date'] = __(
+                        'Please select a time slot for your service.',
+                        'bubbles-booking'
+                    );
+                }
+
                 unset($_POST['bb_continue']);
             }
         }
 
+        // -------------------------------------------------
         // Vehicle Picker -> Package (cuando el picker envía su submit)
+        // Guarda el vehículo vía Bubbles_Vehicle_Picker::save_from_post()
+        // y luego avanza al paso "package" si todo va bien.
+        // -------------------------------------------------
         if ('POST' === $_SERVER['REQUEST_METHOD'] && isset($_POST['bb_vehicle_submit'])) {
-            $current_step = 'package';
+
+            // Intentar guardar el vehículo a través del Vehicle Picker
+            $ok = true;
+
+            global $bubbles_vehicle_picker;
+
+            if (!class_exists('Bubbles_Vehicle_Picker')) {
+                $picker_file = BB_PLUGIN_DIR . 'includes/core/class-bubbles-vehicle-picker.php';
+                if (file_exists($picker_file)) {
+                    require_once $picker_file;
+                }
+            }
+
+            if (!isset($bubbles_vehicle_picker) || !($bubbles_vehicle_picker instanceof Bubbles_Vehicle_Picker)) {
+                if (class_exists('Bubbles_Vehicle_Picker')) {
+                    $bubbles_vehicle_picker = new Bubbles_Vehicle_Picker();
+                }
+            }
+
+            if ($bubbles_vehicle_picker instanceof Bubbles_Vehicle_Picker
+                && method_exists($bubbles_vehicle_picker, 'save_from_post')) {
+                $ok = $bubbles_vehicle_picker->save_from_post();
+            }
+
+            // Si se guardó bien, avanzamos al paso "package"
+            if ($ok) {
+                $current_step = 'package';
+            } else {
+                // Si algo falló (validación/nonce), nos quedamos en "vehicle"
+                $current_step = 'vehicle';
+            }
         }
 
+        // -------------------------------------------------
         // Navegación Back/Continue según el índice del paso actual
+        // -------------------------------------------------
         if ('POST' === $_SERVER['REQUEST_METHOD']) {
             if (isset($_POST['bb_continue'])) {
                 $idx = array_search($current_step, $this->steps, true);
@@ -197,7 +259,27 @@ class Bubbles_Wizard {
             }
         }
 
-        // Layout principal (sin CSS inline, solo estructura)
+        // -------------------------------------------------
+        // Si venimos con "Back" y el paso resultante es "vehicle",
+        // limpiamos los campos del vehículo para que el formulario
+        // se vea vacío (los vehículos quedan arriba en "Saved vehicles").
+        // -------------------------------------------------
+        if (
+            'POST' === $_SERVER['REQUEST_METHOD']
+            && isset($_POST['bb_back'])
+            && $current_step === 'vehicle'
+        ) {
+            unset(
+                $_POST['car_year'],
+                $_POST['car_make'],
+                $_POST['car_model'],
+                $_POST['car_color']
+            );
+        }
+
+        // -------------------------------------------------
+        // Layout principal (sidebar + panel de contenido)
+        // -------------------------------------------------
         $sidebar = $this->render_sidebar($current_step);
         $content = $this->render_step($current_step);
 
@@ -208,6 +290,8 @@ class Bubbles_Wizard {
 
         return $out;
     }
+
+
 
     /* ------------------------- Sidebar ------------------------- */
 
@@ -255,14 +339,29 @@ class Bubbles_Wizard {
         }
     }
 
-    /* ------------------------- STEP 1: VEHICLE ------------------------- */
+  
 
-    protected function render_step_vehicle() {
-        $wizard = $this; // por si quieres usar helpers en la plantilla
-        ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-vehicle.php';
-        return ob_get_clean();
+/* ------------------------- STEP 1: VEHICLE ------------------------- */
+
+protected function render_step_vehicle() {
+    // Por si quieres usar helpers del wizard en las plantillas
+    $wizard = $this;
+
+    // Usamos la instancia global del Vehicle Picker
+    global $bubbles_vehicle_picker;
+
+    if (!class_exists('Bubbles_Vehicle_Picker')) {
+        require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-vehicle-picker.php';
     }
+
+    if (!isset($bubbles_vehicle_picker) || !($bubbles_vehicle_picker instanceof Bubbles_Vehicle_Picker)) {
+        $bubbles_vehicle_picker = new Bubbles_Vehicle_Picker();
+    }
+
+    // El Vehicle Picker se encarga de la lógica + plantilla
+    return $bubbles_vehicle_picker->render_form();
+}
+
 
     /* ------------------------- STEP 2: PACKAGE ------------------------- */
 
@@ -297,224 +396,125 @@ class Bubbles_Wizard {
 
     protected function render_step_addons() {
 
-        $addons_catalog = apply_filters('bubbles_addons_catalog', array(
-            array(
-                'slug'  => 'heavy_pet_hair',
-                'name'  => 'Heavy Pet Hair Removal',
-                'desc'  => 'Intensive pet-hair removal from seats, carpets, and hard-to-reach areas.',
-                'price' => 45,
-            ),
-            array(
-                'slug'  => 'light_pet_hair',
-                'name'  => 'Light Pet Hair Removal',
-                'desc'  => 'Light pet-hair removal in visible areas.',
-                'price' => 25,
-            ),
-            array(
-                'slug'  => 'car_baby_seat',
-                'name'  => 'Car Baby Seat',
-                'desc'  => 'Detailed cleaning of the child car seat (accessible areas).',
-                'price' => 25,
-            ),
-        ));
+    // El wizard solo pide "dame el catálogo de addons"
+    $addons_catalog = apply_filters('bubbles_addons_catalog', array());
 
-        $prev_addons  = $this->posted_array('addons');
-        $selected_pkg = $this->posted('bb_package','');
+    $prev_addons  = $this->posted_array('addons');
+    $selected_pkg = $this->posted('bb_package','');
 
-        $wizard = $this;
+    $wizard = $this;
 
-        ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-addons.php';
-        return ob_get_clean();
-    }
+    ob_start();
+    include plugin_dir_path(__FILE__) . '../templates/wizard-step-addons.php';
+    return ob_get_clean();
+    
+}    /* ------------------------- STEP 4: ADDRESS (con plantilla) ------------------------- */
 
-    /* ------------------------- STEP 4: ADDRESS (SIN PLANTILLA) ------------------------- */
+protected function render_step_address() {
 
-    protected function render_step_address() {
+    $address_type  = $this->posted('bb_address_type','');
+    $address       = $this->posted('bb_address','');
+    $address_extra = $this->posted('bb_address_extra','');
 
-        $address_type  = $this->posted('bb_address_type','');
-        $address       = $this->posted('bb_address','');
-        $address_extra = $this->posted('bb_address_extra','');
+    $errors = $this->errors;
+    $wizard = $this;
 
-        $errors = $this->errors;
-
-        ob_start();
-        ?>
-        <form method="post" class="bb-step-form bb-step-address">
-            <?php
-            // Mantener datos de pasos anteriores
-            echo $this->hidden_vehicle_fields();
-            echo $this->hidden_addons_fields();
-            echo $this->hidden_date_fields();
-            echo $this->hidden_contact_fields();
-            ?>
-            <input type="hidden" name="bb_step" value="address">
-            <input type="hidden" name="bb_package" value="<?php echo esc_attr($this->posted('bb_package')); ?>">
-
-            <h3 class="bb-section-title">Step 4 · Address</h3>
-
-            <?php if (!empty($errors['address'])): ?>
-                <div class="bb-error">
-                    <?php echo esc_html($errors['address']); ?>
-                </div>
-            <?php endif; ?>
-
-            <div class="bb-field-row">
-                <label>Address type</label>
-                <label>
-                    <input type="radio" name="bb_address_type" value="home" <?php checked($address_type, 'home'); ?> />
-                    Home
-                </label>
-                <label>
-                    <input type="radio" name="bb_address_type" value="work" <?php checked($address_type, 'work'); ?> />
-                    Work
-                </label>
-                <label>
-                    <input type="radio" name="bb_address_type" value="other" <?php checked($address_type, 'other'); ?> />
-                    Other
-                </label>
-            </div>
-
-            <div class="bb-field-row">
-                <label for="bb_address">Address</label>
-                <input
-                    type="text"
-                    id="bb_address"
-                    name="bb_address"
-                    value="<?php echo esc_attr($address); ?>"
-                    placeholder="Street, city, state, ZIP"
-                    autocomplete="off"
-                    required
-                />
-                <p class="description">
-                    Start typing your address and select one of the suggestions.
-                </p>
-            </div>
-
-            <div class="bb-field-row">
-                <label for="bb_address_extra">Apartment, suite, etc. (optional)</label>
-                <input
-                    type="text"
-                    id="bb_address_extra"
-                    name="bb_address_extra"
-                    value="<?php echo esc_attr($address_extra); ?>"
-                    placeholder="Apartment, suite, building, gate code, etc."
-                />
-            </div>
-
-            <!-- Hidden fields para Google Places -->
-            <input type="hidden" name="bb_place_id" value="<?php echo esc_attr($this->posted('bb_place_id')); ?>">
-            <input type="hidden" name="bb_address_street" value="<?php echo esc_attr($this->posted('bb_address_street')); ?>">
-            <input type="hidden" name="bb_address_city"   value="<?php echo esc_attr($this->posted('bb_address_city')); ?>">
-            <input type="hidden" name="bb_address_state"  value="<?php echo esc_attr($this->posted('bb_address_state')); ?>">
-            <input type="hidden" name="bb_address_zip"    value="<?php echo esc_attr($this->posted('bb_address_zip')); ?>">
-            <input type="hidden" name="bb_address_lat"    value="<?php echo esc_attr($this->posted('bb_address_lat')); ?>">
-            <input type="hidden" name="bb_address_lng"    value="<?php echo esc_attr($this->posted('bb_address_lng')); ?>">
-
-            <div class="bb-actions">
-                <button type="submit" name="bb_back" class="bb-btn bb-btn-secondary">
-                    &laquo; Back
-                </button>
-                <button type="submit" name="bb_continue" class="bb-btn bb-btn-primary">
-                    Continue
-                </button>
-            </div>
-        </form>
-        <?php
-        return ob_get_clean();
-    }
+    ob_start();
+    include plugin_dir_path(__FILE__) . '../templates/wizard-step-address.php';
+    return ob_get_clean();
+}
 
     /* ------------------------- STEP 5: DATE ------------------------- */
 
-    protected function render_step_date() {
+   protected function render_step_date() {
 
-        $bb_date = $this->posted('bb_date');
-        $bb_time = $this->posted('bb_time');
-        $pkg_id  = $this->posted('bb_package');
+    $bb_date = $this->posted('bb_date');
+    $bb_time = $this->posted('bb_time');
+    $pkg_id  = $this->posted('bb_package');
 
-        $duration_hours = class_exists('Bubbles_Packages')
-            ? Bubbles_Packages::get_duration($pkg_id)
-            : 2.0;
+    $duration_hours = class_exists('Bubbles_Packages')
+        ? Bubbles_Packages::get_duration($pkg_id)
+        : 2.0;
 
-        if (class_exists('Bubbles_Availability')) {
-            $min_date = Bubbles_Availability::get_min_bookable_date();
-            $max_date = Bubbles_Availability::get_max_bookable_date();
-        } else {
-            $today    = current_time('Y-m-d');
-            $min_date = date('Y-m-d', strtotime($today . ' +1 day'));
-            $max_date = date('Y-m-d', strtotime($min_date . ' +59 days'));
-        }
-
-        $min_year  = (int) substr($min_date, 0, 4);
-        $min_month = (int) substr($min_date, 5, 2);
-        $max_year  = (int) substr($max_date, 0, 4);
-        $max_month = (int) substr($max_date, 5, 2);
-
-        $cal_year  = isset($_POST['bb_cal_year'])  ? (int) $_POST['bb_cal_year']  : 0;
-        $cal_month = isset($_POST['bb_cal_month']) ? (int) $_POST['bb_cal_month'] : 0;
-
-        if ($cal_year < 1 || $cal_month < 1 || $cal_month > 12) {
-            $year  = $min_year;
-            $month = $min_month;
-        } else {
-            $year  = $cal_year;
-            $month = $cal_month;
-        }
-
-        if (isset($_POST['bb_cal_prev'])) {
-            $month--;
-            if ($month < 1) { $month = 12; $year--; }
-        }
-        if (isset($_POST['bb_cal_next'])) {
-            $month++;
-            if ($month > 12) { $month = 1; $year++; }
-        }
-
-        $ym     = $year * 100 + $month;
-        $ym_min = $min_year * 100 + $min_month;
-        $ym_max = $max_year * 100 + $max_month;
-
-        if ($ym < $ym_min) { $year = $min_year;  $month = $min_month; }
-        if ($ym > $ym_max) { $year = $max_year;  $month = $max_month; }
-
-        $first_ts      = strtotime("$year-$month-01");
-        $days_in_month = (int) date('t', $first_ts);
-        $first_weekday = (int) date('N', $first_ts); // 1=Mon
-        $month_label   = date_i18n('F Y', $first_ts);
-
-        $is_bookable = function($ymd) use ($min_date, $max_date) {
-            if (class_exists('Bubbles_Availability')) {
-                return Bubbles_Availability::is_date_bookable($ymd);
-            }
-            return ($ymd > current_time('Y-m-d'));
-        };
-
-        $slots = array();
-        if (!empty($bb_date)) {
-            if (class_exists('Bubbles_Availability')) {
-                $slots = Bubbles_Availability::get_slots_for_date(
-                    $bb_date,
-                    array('duration_hours' => $duration_hours)
-                );
-            } else {
-                $slots = array(
-                    array('value'=>'09:00-11:00','label'=>'9:00 AM – 11:00 AM'),
-                    array('value'=>'11:00-13:00','label'=>'11:00 AM – 1:00 PM'),
-                    array('value'=>'13:00-15:00','label'=>'1:00 PM – 3:00 PM'),
-                );
-            }
-        }
-
-        $wizard = $this;
-        $errors = $this->errors;
-
-        $allow_prev = ($year * 100 + $month) > $ym_min;
-        $allow_next = ($year * 100 + $month) < $ym_max;
-
-        ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-date.php';
-        return ob_get_clean();
+    if (class_exists('Bubbles_Availability')) {
+        $min_date = Bubbles_Availability::get_min_bookable_date();
+        $max_date = Bubbles_Availability::get_max_bookable_date();
+    } else {
+        $today    = current_time('Y-m-d');
+        $min_date = date('Y-m-d', strtotime($today . ' +1 day'));
+        $max_date = date('Y-m-d', strtotime($min_date . ' +59 days'));
     }
+
+    $min_year  = (int) substr($min_date, 0, 4);
+    $min_month = (int) substr($min_date, 5, 2);
+    $max_year  = (int) substr($max_date, 0, 4);
+    $max_month = (int) substr($max_date, 5, 2);
+
+    $cal_year  = isset($_POST['bb_cal_year'])  ? (int) $_POST['bb_cal_year']  : 0;
+    $cal_month = isset($_POST['bb_cal_month']) ? (int) $_POST['bb_cal_month'] : 0;
+
+    if ($cal_year < 1 || $cal_month < 1 || $cal_month > 12) {
+        $year  = $min_year;
+        $month = $min_month;
+    } else {
+        $year  = $cal_year;
+        $month = $cal_month;
+    }
+
+    if (isset($_POST['bb_cal_prev'])) {
+        $month--;
+        if ($month < 1) { $month = 12; $year--; }
+    }
+    if (isset($_POST['bb_cal_next'])) {
+        $month++;
+        if ($month > 12) { $month = 1; $year++; }
+    }
+
+    $ym     = $year * 100 + $month;
+    $ym_min = $min_year * 100 + $min_month;
+    $ym_max = $max_year * 100 + $max_month;
+
+    if ($ym < $ym_min) { $year = $min_year;  $month = $min_month; }
+    if ($ym > $ym_max) { $year = $max_year;  $month = $max_month; }
+
+    $first_ts      = strtotime("$year-$month-01");
+    $days_in_month = (int) date('t', $first_ts);
+    $first_weekday = (int) date('N', $first_ts); // 1=Mon
+    $month_label   = date_i18n('F Y', $first_ts);
+
+    $is_bookable = function($ymd) use ($min_date, $max_date) {
+        if (class_exists('Bubbles_Availability')) {
+            return Bubbles_Availability::is_date_bookable($ymd);
+        }
+        return ($ymd > current_time('Y-m-d'));
+    };
+
+    $slots = array();
+    if (!empty($bb_date)) {
+        if (class_exists('Bubbles_Availability')) {
+            $slots = Bubbles_Availability::get_slots_for_date(
+                $bb_date,
+                array('duration_hours' => $duration_hours)
+            );
+        } else {
+            $slots = array(
+                array('value'=>'09:00-11:00','label'=>'9:00 AM – 11:00 AM'),
+                array('value'=>'11:00-13:00','label'=>'11:00 AM – 1:00 PM'),
+                array('value'=>'13:00-15:00','label'=>'1:00 PM – 3:00 PM'),
+            );
+        }
+    }
+
+    $wizard = $this;
+    $errors = $this->errors;
+
+    $allow_prev = ($year * 100 + $month) > $ym_min;
+    $allow_next = ($year * 100 + $month) < $ym_max;
+
+    ob_start();
+    include BB_PLUGIN_DIR . 'templates/wizard-step-date.php';
+    return ob_get_clean();
+}
 
     /* ------------------------- STEP 6: CONFIRM ------------------------- */
 
@@ -759,28 +759,43 @@ new Bubbles_Wizard();
 } // fin if !class_exists
 
 // Guardar los datos del booking en la línea del pedido
+// Guardar solo los datos útiles del booking en la línea del pedido
 add_action('woocommerce_checkout_create_order_line_item', function($item, $cart_item_key, $values) {
+
+    // Claves de $cart_item_data => Etiqueta bonita en el pedido
     $fields = array(
-        'car_year','car_make','car_model',
-        'package','addons',
-        'date','time',
-        'name','phone','email','notes',
-        'address_type','address','address_extra',
-        'bb_place_id','bb_address_street','bb_address_city',
-        'bb_address_state','bb_address_zip',
-        'bb_address_lat','bb_address_lng'
+        'car_year'      => 'Car year',
+        'car_make'      => 'Car make',
+        'car_model'     => 'Car model',
+        'package'       => 'Package',
+        'addons'        => 'Add-ons',
+        'date'          => 'Date',
+        'time'          => 'Time',
+        'address'       => 'Service address',
+        'address_extra' => 'Address details',
+        'name'          => 'Customer name',
+        'phone'         => 'Phone',
+        'email'         => 'Email',
+        'notes'         => 'Notes',
+        // si quieres mostrar también el tipo de address, puedes descomentar:
+        // 'address_type'  => 'Address type',
     );
 
-    foreach ($fields as $f) {
-        if (isset($values[$f]) && $values[$f] !== '') {
-            $value = $values[$f];
+    foreach ($fields as $key => $label) {
+        if (!empty($values[$key])) {
+            $value = $values[$key];
+
             if (is_array($value)) {
                 $value = implode(', ', array_map('sanitize_text_field', $value));
+            } else {
+                $value = sanitize_text_field($value);
             }
-            $item->add_meta_data(ucfirst(str_replace('_',' ',$f)), $value);
+
+            $item->add_meta_data($label, $value);
         }
     }
 }, 10, 3);
+
 
 // Aplicar custom_price al carrito (precio dinámico)
 add_filter('woocommerce_before_calculate_totals', function($cart) {
@@ -797,3 +812,14 @@ add_filter('woocommerce_before_calculate_totals', function($cart) {
         }
     }
 });
+// Quitar el enlace del producto "Car Detailing Booking" en pedidos y emails
+add_filter('woocommerce_order_item_permalink', function($permalink, $item, $order) {
+    $product_id = $item->get_product_id();
+
+    // ID del producto de booking (ajusta si usas otro)
+    if ($product_id == 240) {
+        return ''; // sin enlace
+    }
+
+    return $permalink;
+}, 10, 3);

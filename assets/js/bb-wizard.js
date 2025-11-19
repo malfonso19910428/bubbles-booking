@@ -168,4 +168,13 @@
 
     wireStep(panel);
   });
+  // Cuando ya hay slots en la página, hacer un pequeño scroll automático
+jQuery(function ($) {
+    var $slotsWrapper = $('.bb-time-slots-wrapper .bb-time-slots');
+
+    if ($slotsWrapper.length) {
+        var top = $slotsWrapper.offset().top - 140; // margen para el header fijo si hay
+        $('html, body').animate({ scrollTop: top }, 350);
+    }
+});
 })();

@@ -2,17 +2,21 @@
 if (!defined('ABSPATH')) exit;
 
 /**
- * Template: Step 3 - Add-ons (optional)
+ * Template: Wizard Step - Add-ons
  *
- * Variables disponibles:
- * - $wizard        (instancia de Bubbles_Wizard)
- * - $addons_catalog (array de add-ons disponibles)
- * - $prev_addons   (array con los add-ons seleccionados previamente)
- * - $selected_pkg  (id del paquete seleccionado)
+ * Variables esperadas:
+ * - $wizard         -> instancia de Bubbles_Wizard
+ * - $addons_catalog -> catálogo de add-ons (array)
+ * - $prev_addons    -> array de slugs seleccionados previamente
+ * - $selected_pkg   -> ID del paquete elegido en el paso anterior
  */
+
+$addons      = isset($addons_catalog) && is_array($addons_catalog) ? $addons_catalog : array();
+$prev_addons = isset($prev_addons) && is_array($prev_addons) ? $prev_addons : array();
+$selected_pkg = isset($selected_pkg) ? $selected_pkg : '';
 ?>
 
-<h3 class="bb-section-title">Step 3 · Add-ons (optional)</h3>
+<h3 class="bb-section-title">Step 3 · Add-ons</h3>
 
 <form method="post" class="bb-step-form" novalidate>
 
@@ -20,51 +24,68 @@ if (!defined('ABSPATH')) exit;
     // Paso actual
     echo $wizard->hidden('bb_step', 'addons');
 
-    // Reinyectar info anterior
+    // Mantener datos de pasos anteriores
     echo $wizard->hidden_vehicle_fields();
-    echo $wizard->hidden('bb_package', $selected_pkg);
+    echo $wizard->hidden_addons_fields();   // por si vienes de atrás con algo seleccionado
     echo $wizard->hidden_address_fields();
     echo $wizard->hidden_date_fields();
     echo $wizard->hidden_contact_fields();
+
+    // Mantener el paquete seleccionado
+    if (!empty($selected_pkg)) {
+        echo $wizard->hidden('bb_package', $selected_pkg);
+    }
     ?>
 
-    <div class="bb-addons">
+    <div class="bb-addons-grid">
+        <?php foreach ($addons as $addon):
 
-        <?php if (!empty($addons_catalog)): ?>
+            $slug   = $addon['slug']  ?? '';
+            if ($slug === '') continue;
 
-            <?php foreach ($addons_catalog as $ad): 
-                $slug   = esc_attr($ad['slug']);
-                $name   = esc_html($ad['name']);
-                $desc   = esc_html($ad['desc']);
-                $priceV = isset($ad['price']) ? (float)$ad['price'] : 0;
-                $price  = '$' . number_format_i18n($priceV, 2);
+            $name   = $addon['name']  ?? $slug;
+            $desc   = $addon['desc']  ?? '';
+            $price  = $addon['price'] ?? '';
+            $badge  = $addon['badge'] ?? '';
 
-                $checked = in_array($ad['slug'], $prev_addons, true) ? 'checked' : '';
-            ?>
+            $checked = in_array($slug, $prev_addons, true);
+        ?>
+            <label class="bb-addon-card<?php echo $checked ? ' is-selected' : ''; ?>">
+                <input type="checkbox"
+                       class="bb-addon-checkbox"
+                       name="addons[]"
+                       value="<?php echo esc_attr($slug); ?>"
+                       <?php checked($checked); ?>>
 
-                <label class="bb-addon-card">
-                    <input type="checkbox" name="addons[]" value="<?php echo $slug; ?>" <?php echo $checked; ?> />
-                    <div>
-                        <h4><?php echo $name; ?> <span style="font-weight:600">(<?php echo $price; ?>)</span></h4>
-                        <?php if (!empty($desc)): ?>
-                            <p><?php echo $desc; ?></p>
-                        <?php endif; ?>
-                    </div>
-                </label>
+                <span class="bb-addon-title">
+                    <?php echo esc_html($name); ?>
+                    <?php if ($badge): ?>
+                        <span class="bb-addon-badge"><?php echo esc_html($badge); ?></span>
+                    <?php endif; ?>
+                </span>
 
-            <?php endforeach; ?>
+                <?php if ($price !== ''): ?>
+                    <span class="bb-addon-price">
+                        + $<?php echo esc_html(number_format((float) $price, 0)); ?>
+                    </span>
+                <?php endif; ?>
 
-        <?php else: ?>
-
-            <p>No add-ons are available at this moment.</p>
-
-        <?php endif; ?>
-
+                <?php if ($desc): ?>
+                    <span class="bb-addon-desc">
+                        <?php echo esc_html($desc); ?>
+                    </span>
+                <?php endif; ?>
+            </label>
+        <?php endforeach; ?>
     </div>
 
     <div class="bb-actions">
-        <button type="submit" name="bb_back" value="1" class="button">Back</button>
-        <button type="submit" name="bb_continue" value="1" class="button button-primary">Continue</button>
+        <button type="submit" name="bb_back" value="1" class="bb-btn bb-btn-secondary">
+            &laquo; Back
+        </button>
+        <button type="submit" name="bb_continue" value="1" class="bb-btn bb-btn-primary">
+            Continue
+        </button>
     </div>
 
 </form>

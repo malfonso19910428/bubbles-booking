@@ -1,132 +1,304 @@
 <?php
-if (!defined('ABSPATH')) exit;
-
 /**
- * Template: Step 5 - Date & time
+ * Wizard Step 5: Date & Time
  *
- * Variables:
- * - $wizard
- * - $errors
+ * Variables que vienen desde Bubbles_Wizard::render_step_date():
  * - $bb_date
  * - $bb_time
- * - $slots
  * - $month_label
- * - $year
- * - $month
- * - $first_weekday
+ * - $year, $month
  * - $days_in_month
- * - $is_bookable
- * - $allow_prev
- * - $allow_next
+ * - $first_weekday
+ * - $is_bookable (callable)
+ * - $slots
+ * - $errors
+ * - $allow_prev, $allow_next
+ * - $wizard (instancia de Bubbles_Wizard)
  */
+
+if (!defined('ABSPATH')) exit;
 ?>
 
-<h3 class="bb-section-title">Step 5 · Date & time</h3>
+<h3 class="bb-section-title">Step 5 · Date &amp; time</h3>
 
 <?php if (!empty($errors['date'])): ?>
-    <p class="bb-error" style="color:#b91c1c;">
+    <p class="bb-error">
         <?php echo esc_html($errors['date']); ?>
     </p>
 <?php else: ?>
-    <p>Select a date and then show available time slots.</p>
+    <p>Please choose a date and time for your service.</p>
 <?php endif; ?>
 
-<form method="post" class="bb-step-form" novalidate>
+<form method="post" class="bb-step-form bb-step-date" novalidate>
 
-<?php
-echo $wizard->hidden('bb_step','date');
-echo $wizard->hidden_vehicle_fields();
-echo $wizard->hidden('bb_package', $wizard->posted('bb_package'));
-echo $wizard->hidden_addons_fields();
-echo $wizard->hidden_address_fields();
-echo $wizard->hidden_contact_fields();
-?>
+    <?php wp_nonce_field('bb_wizard_date', 'bb_wizard_date_nonce'); ?>
 
-<input type="hidden" name="bb_cal_year" value="<?php echo esc_attr($year); ?>">
-<input type="hidden" name="bb_cal_month" value="<?php echo esc_attr($month); ?>">
+    <!-- El wizard sabe que estamos en el paso "date" -->
+    <input type="hidden" name="bb_step" value="date">
 
-<div class="bb-calendar-wrap">
+    <?php
+    // Reinyectar datos de pasos anteriores para no perderlos
+    if (isset($wizard) && $wizard instanceof Bubbles_Wizard) {
+        echo $wizard->hidden_vehicle_fields();   // car_year, car_make, car_model
+        echo $wizard->hidden_addons_fields();    // addons[]
+        echo $wizard->hidden_address_fields();   // address + place_id + campos estructurados
+    }
 
-    <div class="bb-calendar-header">
-        <button type="submit" name="bb_cal_prev" <?php echo $allow_prev?'':'disabled'; ?>>«</button>
-        <strong><?php echo esc_html($month_label); ?></strong>
-        <button type="submit" name="bb_cal_next" <?php echo $allow_next?'':'disabled'; ?>>»</button>
-    </div>
+    // Mantener el paquete seleccionado
+    $selected_pkg = $wizard->posted('bb_package');
+    ?>
+    <input type="hidden" name="bb_package" value="<?php echo esc_attr($selected_pkg); ?>">
 
-    <table class="bb-calendar">
-        <thead>
-            <tr><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr>
-        </thead>
-        <tbody>
-            <?php
-            $day  = 1;
-            $cell = 1;
+    <?php
+    // 👉 CLAVE: mantener la fecha seleccionada entre submits
+    if (!empty($bb_date)): ?>
+        <input type="hidden" name="bb_date" value="<?php echo esc_attr($bb_date); ?>">
+    <?php endif; ?>
 
-            echo '<tr>';
+    <!-- Layout: calendario a la izquierda, slots a la derecha -->
+    <div class="bb-date-layout">
 
-            while ($cell < $first_weekday) {
-                echo '<td class="bb-cal-empty"></td>';
-                $cell++;
-            }
+        <!-- Columna 1: Calendario -->
+        <div class="bb-calendar-wrap">
 
-            while ($day <= $days_in_month) {
-                if ($cell > 7) {
-                    echo '</tr><tr>';
-                    $cell = 1;
+            <!-- Navegación del calendario (mes anterior / siguiente) -->
+            <div class="bb-calendar-header">
+
+                <button type="submit"
+                        name="bb_cal_prev"
+                        value="1"
+                        class="bb-cal-nav"
+                        <?php disabled(!$allow_prev); ?>>
+                    &laquo;
+                </button>
+
+                <span class="bb-cal-month">
+                    <?php echo esc_html($month_label); ?>
+                </span>
+
+                <button type="submit"
+                        name="bb_cal_next"
+                        value="1"
+                        class="bb-cal-nav"
+                        <?php disabled(!$allow_next); ?>>
+                    &raquo;
+                </button>
+
+            </div>
+
+            <input type="hidden" name="bb_cal_year"  value="<?php echo esc_attr($year); ?>">
+            <input type="hidden" name="bb_cal_month" value="<?php echo esc_attr($month); ?>">
+
+            <!-- Calendario mensual -->
+            <table class="bb-calendar">
+                <thead>
+                    <tr>
+                        <th>Mon</th>
+                        <th>Tue</th>
+                        <th>Wed</th>
+                        <th>Thu</th>
+                        <th>Fri</th>
+                        <th>Sat</th>
+                        <th>Sun</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php
+                $day  = 1;
+                $cell = 1;
+
+                while ($day <= $days_in_month) {
+                    echo '<tr>';
+                    for ($col = 1; $col <= 7; $col++, $cell++) {
+
+                        // Celdas vacías antes del primer día
+                        if ($cell < $first_weekday || $day > $days_in_month) {
+                            echo '<td class="bb-cal-empty"></td>';
+                            continue;
+                        }
+
+                        $ymd         = sprintf('%04d-%02d-%02d', $year, $month, $day);
+                        $bookable    = $is_bookable($ymd);
+                        $is_selected = ($bb_date === $ymd);
+
+                        echo '<td>';
+
+                        if ($bookable) {
+                            ?>
+                            <button
+                                type="submit"
+                                name="bb_date"
+                                value="<?php echo esc_attr($ymd); ?>"
+                                class="bb-cal-day<?php echo $is_selected ? ' is-selected' : ''; ?>"
+                            >
+                                <?php echo (int) $day; ?>
+                            </button>
+                            <?php
+                        } else {
+                            ?>
+                            <span class="bb-cal-day disabled">
+                                <?php echo (int) $day; ?>
+                            </span>
+                            <?php
+                        }
+
+                        echo '</td>';
+                        $day++;
+                    }
+                    echo '</tr>';
                 }
+                ?>
+                </tbody>
+            </table>
+        </div><!-- /.bb-calendar-wrap -->
 
-                $ymd = sprintf('%04d-%02d-%02d', $year, $month, $day);
-                $valid    = $is_bookable($ymd);
-                $selected = ($bb_date === $ymd);
+        <!-- Columna 2: Time slots (Morning / Afternoon / Evening) -->
+        <div class="bb-slots-panel">
 
-                if (!$valid) {
-                    echo '<td class="bb-cal-disabled"><span>'.$day.'</span></td>';
-                } else {
-                    echo '<td class="bb-cal-day">';
-                    echo '<label><input type="radio" name="bb_date" value="'.$ymd.'" '.checked($selected,true,false).'><span>'.$day.'</span></label>';
-                    echo '</td>';
+            <?php if (!empty($bb_date)): ?>
+
+                <h4 class="bb-time-title">
+                    Available time slots for <?php echo esc_html($bb_date); ?>
+                </h4>
+
+                <?php
+                // Agrupar slots en Morning / Afternoon / Evening
+                $groups = array(
+                    'Morning'   => array(),
+                    'Afternoon' => array(),
+                    'Evening'   => array(),
+                );
+
+                if (!empty($slots) && is_array($slots)) {
+                    foreach ($slots as $slot) {
+                        $value = isset($slot['value']) ? $slot['value'] : '';
+                        $label = isset($slot['label']) ? $slot['label'] : $value;
+
+                        if (empty($value)) {
+                            // Si no hay valor claro, lo mandamos al grupo Afternoon por defecto
+                            $groups['Afternoon'][] = array('value' => $value, 'label' => $label);
+                            continue;
+                        }
+
+                        // Asumimos formato HH:MM-... para obtener la hora inicial
+                        $hour = (int) substr($value, 0, 2);
+
+                        if ($hour < 12) {
+                            $groups['Morning'][] = array('value' => $value, 'label' => $label);
+                        } elseif ($hour < 17) {
+                            $groups['Afternoon'][] = array('value' => $value, 'label' => $label);
+                        } else {
+                            $groups['Evening'][] = array('value' => $value, 'label' => $label);
+                        }
+                    }
                 }
+                ?>
 
-                $day++;
-                $cell++;
-            }
+                <div class="bb-time-groups">
 
-            while ($cell <= 7) {
-                echo '<td class="bb-cal-empty"></td>';
-                $cell++;
-            }
+                    <?php foreach ($groups as $group_label => $items): ?>
+                        <div class="bb-time-group-section">
 
-            echo '</tr>';
-            ?>
-        </tbody>
-    </table>
-</div>
+                            <div class="bb-time-group-title">
+                                <?php echo esc_html($group_label); ?>
+                            </div>
 
-<?php if (!empty($bb_date)): ?>
-    <?php if (!empty($slots)): ?>
-        <p>
-            <label>Available time slots for <strong><?php echo esc_html($bb_date); ?></strong><br>
-                <select name="bb_time" required>
-                    <option value="">Select a time slot…</option>
-                    <?php foreach ($slots as $s): ?>
-                        <option value="<?php echo esc_attr($s['value']); ?>" <?php selected($bb_time,$s['value']); ?>>
-                            <?php echo esc_html($s['label']); ?>
-                        </option>
+                            <?php if (!empty($items)): ?>
+
+                                <div class="bb-time-group-slots">
+                                    <?php foreach ($items as $slot):
+                                        $value   = $slot['value'];
+                                        $label   = $slot['label'];
+                                        $checked = ($bb_time === $value);
+                                    ?>
+                                        <label class="bb-time-slot">
+                                            <input
+                                                type="radio"
+                                                name="bb_time"
+                                                value="<?php echo esc_attr($value); ?>"
+                                                <?php checked($checked); ?>
+                                                required
+                                            >
+                                            <span><?php echo esc_html($label); ?></span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+
+                            <?php else: ?>
+                                <p class="bb-no-slots">No slots available for this period.</p>
+                            <?php endif; ?>
+
+                        </div>
                     <?php endforeach; ?>
-                </select>
-            </label>
-        </p>
-    <?php else: ?>
-        <p class="bb-error" style="color:#b91c1c;">No slots available for this day.</p>
-    <?php endif; ?>
-<?php endif; ?>
 
-<div class="bb-actions">
-    <button type="submit" name="bb_back" value="1" class="button">Back</button>
-    <button type="submit" name="bb_change_day" value="1" class="button">Show time slots</button>
-    <?php if (!empty($slots)): ?>
-        <button type="submit" name="bb_continue" value="1" class="button button-primary">Continue</button>
-    <?php endif; ?>
-</div>
+                </div><!-- /.bb-time-groups -->
+
+            <?php else: ?>
+
+                <p class="bb-help">Select a date to see available time slots.</p>
+
+            <?php endif; ?>
+
+        </div><!-- /.bb-slots-panel -->
+
+    </div><!-- /.bb-date-layout  esta parte tengo que verla despues a ver como hago esto generico para todos los pasos--> 
+
+       <div class="bb-actions">
+        <button type="submit"
+                name="bb_back"
+                value="1"
+                class="bb-btn bb-btn-secondary">
+            &laquo; Back
+        </button>
+
+        <button disabled type="submit"
+                name="bb_continue"
+                value="1"
+                class="bb-btn bb-btn-primary"
+                id="bb_date_continue_btn">
+            Continue &raquo;
+        </button>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Formulario del paso date
+    var form = document.querySelector('.bb-step-form.bb-step-date');
+    if (!form) return;
+
+    // Botón "Continue"
+    var btnContinue = document.getElementById('bb_date_continue_btn');
+    if (!btnContinue) return;
+
+    // Todos los radios de time slot
+    function getTimeRadios() {
+        return form.querySelectorAll('input[name="bb_time"]');
+    }
+
+    function updateButton() {
+        var radios = getTimeRadios();
+        var hasTime = false;
+
+        radios.forEach(function (r) {
+            if (r.checked) {
+                hasTime = true;
+            }
+        });
+
+        btnContinue.disabled = !hasTime;
+    }
+
+    // Escuchar cambios en los radios
+    getTimeRadios().forEach(function (r) {
+        r.addEventListener('change', updateButton);
+    });
+
+    // Por si venimos de un back con un slot ya marcado
+    updateButton();
+});
+</script>
+
+
 
 </form>

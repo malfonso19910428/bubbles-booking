@@ -94,11 +94,22 @@ echo $wizard->hidden_date_fields();
     <p><strong>Time:</strong> <?php echo esc_html($bb_time); ?></p>
 </div>
 
-<input type="hidden" name="bb_confirm_booking" value="1">
-
 <div class="bb-actions">
-    <button type="submit" name="bb_back" value="1" class="button">Back</button>
-    <button type="submit" class="button button-primary">Confirm & pay</button>
+    <!-- Back: solo navega al paso anterior -->
+    <button type="submit"
+            name="bb_back"
+            value="1"
+            class="bb-btn bb-btn-secondary">
+        &laquo; Back
+    </button>
+
+    <!-- Confirm & pay: dispara bb_confirm_booking -->
+    <button type="submit"
+            name="bb_confirm_booking"
+            value="1"
+            class="bb-btn bb-btn-primary">
+        Confirm &amp; pay &raquo;
+    </button>
 </div>
 
 </form>

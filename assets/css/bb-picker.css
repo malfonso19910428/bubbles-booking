@@ -1,0 +1,52 @@
+/* Layout general del bloque de vehículo */
+.bb-vehicle-step .bb-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Título pequeño dentro de cada columna */
+.bb-subtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+}
+
+/* Contenedor de columnas */
+.bb-vehicle-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+.bb-actions {
+  margin-top: 1.5rem;  /* separa los botones del formulario */
+  gap: 1rem;        /* separación horizontal entre botones */
+}
+
+/* En pantallas grandes: dos columnas */
+@media (min-width: 980px) {
+  .bb-vehicle-layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .bb-vehicle-new {
+    flex: 2;
+    min-width: 0;
+    max-width: 500px;
+  }
+
+  .bb-vehicle-saved {
+    flex: 1;
+    min-width: 260px;
+  }
+}
+
+/* Ajuste básico para el bloque de guardados, sin cambiar colores de tu tema */
+.bb-vehicle-saved #bb-saved {
+  margin-top: 0.25rem;
+}
+
+.bb-vehicle-saved .bb-list {
+  margin: 0;
+  padding-left: 1.1rem; /* mantiene el bullet que ya tienes */
+}
