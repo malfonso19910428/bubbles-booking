@@ -83,6 +83,14 @@ $selected_pkg = isset($selected_pkg) ? $selected_pkg : '';
         <button type="submit" name="bb_back" value="1" class="bb-btn bb-btn-secondary">
             &laquo; Back
         </button>
+        
+      <!-- BOTÓN ADD ANOTHER VEHICLE (ENVÍA EL FORMULARIO) -->
+    <button type="submit"
+            name="bb_add_vehicle"
+            value="1"
+            class="bb-btn bb-btn-tertiary">
+        + Add another vehicle
+    </button>
         <button type="submit" name="bb_continue" value="1" class="bb-btn bb-btn-primary">
             Continue
         </button>

@@ -37,13 +37,32 @@ class Bubbles_Vehicle_Picker {
         $raw_model = isset($_POST['car_model']) ? sanitize_text_field($_POST['car_model']) : '';
         $raw_color = isset($_POST['car_color']) ? sanitize_text_field($_POST['car_color']) : '';
 
-        // Estos son los valores que verá la plantilla (y el usuario en el form)
+        // Vehículo que ve el usuario en el formulario
         $prev = array(
             'year'  => $raw_year,
             'make'  => $raw_make,
             'model' => $raw_model,
             'color' => $raw_color,
         );
+
+        // 🔹 2) ESTADO GLOBAL QUE DEBEMOS ARRASTRAR
+        // JSON con la lista de vehículos ya añadidos
+        $bb_vehicles_json = '';
+        if (isset($_POST['bb_vehicles'])) {
+            $tmp = wp_unslash($_POST['bb_vehicles']);
+            $bb_vehicles_json = is_string($tmp) ? $tmp : '';
+        }
+
+        // Paquete ya elegido (si existe)
+        $bb_package = isset($_POST['bb_package'])
+            ? sanitize_text_field($_POST['bb_package'])
+            : '';
+
+        // Add-ons ya elegidos (si existen)
+        $addons_current = array();
+        if (isset($_POST['addons']) && is_array($_POST['addons'])) {
+            $addons_current = array_map('sanitize_text_field', $_POST['addons']);
+        }
 
         // -------- REMOVE VEHICLE --------
         if (
@@ -121,20 +140,9 @@ class Bubbles_Vehicle_Picker {
                     'color' => '',
                 );
 
-                // Opcional: limpiar POST
+                // Opcional: limpiar POST de los campos visibles
                 unset($_POST['car_year'], $_POST['car_make'], $_POST['car_model'], $_POST['car_color']);
             }
-               // 👉 AQUÍ VIENE LA MAGIA PARA QUE EL FORMULARIO SE VEA VACÍO
-    // Si NO es un POST del botón bb_vehicle_submit (es decir, vienes desde otros pasos),
-    // siempre mostramos el formulario vacío aunque haya valores escondidos en $_POST.
-    if (!isset($_POST['bb_vehicle_submit'])) {
-        $prev = array(
-            'year'  => '',
-            'make'  => '',
-            'model' => '',
-            'color' => '',
-        );
-    }
         }
 
         // -------- LISTADO DE VEHÍCULOS GUARDADOS --------
@@ -149,8 +157,9 @@ class Bubbles_Vehicle_Picker {
             return '<div class="notice notice-error"><p><strong>Bubbles Booking:</strong> Missing template <code>templates/wizard-step-vehicle.php</code>.</p></div>';
         }
 
-        // Variables disponibles para la plantilla:
-        // $prev, $errors, $message, $saved_posts, $has_cpt
+        // Variables disponibles en la plantilla:
+        // $prev, $errors, $message, $saved_posts, $has_cpt,
+        // $bb_vehicles_json, $bb_package, $addons_current
         ob_start();
         include $template;
         return ob_get_clean();
@@ -167,7 +176,7 @@ class Bubbles_Vehicle_Picker {
             && function_exists('bubbles_list_my_vehicles')
             && function_exists('bubbles_delete_vehicle');
 
-        if (! $has_cpt) {
+        if (!$has_cpt) {
             return false;
         }
 
@@ -178,8 +187,6 @@ class Bubbles_Vehicle_Picker {
         ) {
             return false;
         }
-
-   
 
         // Leer valores crudos desde $_POST
         $year  = isset($_POST['car_year'])  ? sanitize_text_field($_POST['car_year'])  : '';

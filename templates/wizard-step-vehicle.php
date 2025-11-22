@@ -8,11 +8,14 @@
  *  - $message
  *  - $saved_posts
  *  - $has_cpt
+ *  - $bb_vehicles_json   (JSON con vehículos ya añadidos)
+ *  - $bb_package         (paquete actual, si existe)
+ *  - $addons_current     (array de add-ons seleccionados)
  */
 
 if (!defined('ABSPATH')) exit;
 
-// Si no hay errores, empezamos con los campos del vehículo vacíos
+// Si no hay errores, dejamos el form vacío (nuevo vehículo)
 if (empty($errors)) {
     $prev = array(
         'year'  => '',
@@ -21,6 +24,13 @@ if (empty($errors)) {
         'color' => '',
     );
 }
+
+// Normalizamos por si no vienen
+$bb_vehicles_json = isset($bb_vehicles_json) ? $bb_vehicles_json : '';
+$bb_package       = isset($bb_package)       ? $bb_package       : '';
+$addons_current   = isset($addons_current) && is_array($addons_current)
+    ? $addons_current
+    : array();
 ?>
 
 <h3 class="bb-section-title">Step 1 · Vehicle info</h3>
@@ -44,7 +54,6 @@ if (empty($errors)) {
             </div>
         <?php endif; ?>
 
-        <!-- NUEVO: layout en dos columnas -->
         <div class="bb-vehicle-layout">
 
             <!-- Columna izquierda: formulario de nuevo vehículo -->
@@ -53,6 +62,28 @@ if (empty($errors)) {
 
                 <form method="post" id="bb-form" class="bb-form" novalidate>
                     <?php echo wp_nonce_field('bb_vehicle_form', 'bb_vehicle_nonce', true, false); ?>
+
+                    <!-- Paso actual del wizard -->
+                    <input type="hidden" name="bb_step" value="vehicle">
+
+                    <!-- Lista de vehículos ya añadidos -->
+                    <input type="hidden"
+                           name="bb_vehicles"
+                           value="<?php echo esc_attr($bb_vehicles_json); ?>">
+
+                    <!-- Paquete actual (para que no se borre al añadir otro vehículo) -->
+                    <input type="hidden"
+                           name="bb_package"
+                           value="<?php echo esc_attr($bb_package); ?>">
+
+                    <!-- Add-ons ya seleccionados (para que no se borren) -->
+                    <?php if (!empty($addons_current)) : ?>
+                        <?php foreach ($addons_current as $slug) : ?>
+                            <input type="hidden"
+                                   name="addons[]"
+                                   value="<?php echo esc_attr($slug); ?>">
+                        <?php endforeach; ?>
+                    <?php endif; ?>
 
                     <div class="bb-steps">
                         <div class="bb-step">
@@ -107,7 +138,7 @@ if (empty($errors)) {
                     </div>
 
                     <div class="bb-actions">
-                        <button type="submit" name="bb_vehicle_submit" class="button button-primary">
+                        <button type="submit" name="bb_vehicle_submit" value="1" class="button button-primary">
                             See my price
                         </button>
                         <button type="button" id="bb-help" class="button button-secondary">

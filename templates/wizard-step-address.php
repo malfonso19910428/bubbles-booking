@@ -83,19 +83,25 @@ if (!defined('ABSPATH')) exit;
         </label>
     </p>
 
-    <div class="bb-actions">
-        <button type="submit"
-                name="bb_back"
-                value="1"
-                class="bb-btn bb-btn-secondary">
-            &laquo; Back
-        </button>
+   <div class="bb-actions">
 
-        <button type="submit"
-                name="bb_continue"
-                value="1"
-                class="bb-btn bb-btn-primary">
-            Continue &raquo;
-        </button>
-    </div>
+    <!-- BOTÓN BACK -->
+    <button type="submit"
+            name="bb_back"
+            value="1"
+            class="bb-btn bb-btn-secondary">
+        &laquo; Back
+    </button>
+
+    <!-- BOTÓN CONTINUE -->
+    <button type="submit"
+            name="bb_continue"
+            value="1"
+            class="bb-btn bb-btn-primary">
+        Continue &raquo;
+    </button>
+
+</div>
+
+   
 </form>

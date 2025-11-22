@@ -30,6 +30,11 @@ class Bubbles_Wizard {
         add_shortcode('bubbles_wizard', array($this, 'render'));
     }
 
+    /** Devuelve el array de pasos (para la plantilla shell) */
+    public function get_steps() {
+        return $this->steps;
+    }
+
     /* ------------------------- Helpers ------------------------- */
 
     /** Obtiene valor posteado (string o array saneado) */
@@ -44,20 +49,34 @@ class Bubbles_Wizard {
         return isset($_POST[$key]) && is_array($_POST[$key]) ? array_map('sanitize_text_field', $_POST[$key]) : array();
     }
 
+    /** Obtiene el JSON crudo de bb_vehicles sin romperlo con sanitize_text_field */
+    private function get_posted_vehicles_json() {
+        if (isset($_POST['bb_vehicles'])) {
+            $raw = wp_unslash($_POST['bb_vehicles']);
+            return is_string($raw) ? $raw : '';
+        }
+        return '';
+    }
+
     /** Input hidden */
     public function hidden($name, $value) {
         return '<input type="hidden" name="'.esc_attr($name).'" value="'.esc_attr($value).'" />';
     }
 
-    /** Hidden del vehículo */
+    /** Hidden del vehículo (vehículo actual + JSON de vehículos) */
     public function hidden_vehicle_fields() {
         $html  = $this->hidden('car_year',  $this->posted('car_year'));
         $html .= $this->hidden('car_make',  $this->posted('car_make'));
         $html .= $this->hidden('car_model', $this->posted('car_model'));
+
+        // Lista de vehículos ya añadidos en JSON
+        $vehicles_json = $this->get_posted_vehicles_json();
+        $html .= $this->hidden('bb_vehicles', $vehicles_json);
+
         return $html;
     }
 
-    /** Hidden de add-ons seleccionados */
+    /** Hidden de add-ons seleccionados (del vehículo actual) */
     public function hidden_addons_fields() {
         $html = '';
         foreach ($this->posted_array('addons') as $slug) {
@@ -102,8 +121,6 @@ class Bubbles_Wizard {
     }
 
     /* ------------------------- Render principal ------------------------- */
-    /* ------------------------- Render principal ------------------------- */
-
     public function render() {
 
         /* 1) Confirmación final: enviar a WooCommerce checkout */
@@ -122,7 +139,7 @@ class Bubbles_Wizard {
             $_SERVER['REQUEST_METHOD'] === 'POST' &&
             isset($_POST['bb_step']) &&
             $_POST['bb_step'] === 'address' &&
-            isset($_POST['bb_continue'])
+            (isset($_POST['bb_continue']) || isset($_POST['bb_add_vehicle']))
         ) {
             if (!is_array($this->errors)) {
                 $this->errors = array();
@@ -134,13 +151,20 @@ class Bubbles_Wizard {
             // Borrar error viejo si hubiera
             unset($this->errors['address']);
 
-            // 👉 Si NO marcó ningún radio
+            // Si NO marcó ningún radio
             if ($address_type === '') {
                 $this->errors['address'] = 'Please select if this is your home, work, or other address.';
 
                 // Mantener al usuario en el paso address
                 $current_step = 'address';
-                unset($_POST['bb_continue']);
+
+                // Evitar que la navegación avance
+                if (isset($_POST['bb_continue'])) {
+                    unset($_POST['bb_continue']);
+                }
+                if (isset($_POST['bb_add_vehicle'])) {
+                    unset($_POST['bb_add_vehicle']);
+                }
             }
         }
 
@@ -204,13 +228,10 @@ class Bubbles_Wizard {
         }
 
         // -------------------------------------------------
-        // Vehicle Picker -> Package (cuando el picker envía su submit)
-        // Guarda el vehículo vía Bubbles_Vehicle_Picker::save_from_post()
-        // y luego avanza al paso "package" si todo va bien.
+        // Vehicle Picker -> Package
         // -------------------------------------------------
         if ('POST' === $_SERVER['REQUEST_METHOD'] && isset($_POST['bb_vehicle_submit'])) {
 
-            // Intentar guardar el vehículo a través del Vehicle Picker
             $ok = true;
 
             global $bubbles_vehicle_picker;
@@ -233,37 +254,100 @@ class Bubbles_Wizard {
                 $ok = $bubbles_vehicle_picker->save_from_post();
             }
 
-            // Si se guardó bien, avanzamos al paso "package"
             if ($ok) {
                 $current_step = 'package';
             } else {
-                // Si algo falló (validación/nonce), nos quedamos en "vehicle"
                 $current_step = 'vehicle';
             }
         }
 
         // -------------------------------------------------
-        // Navegación Back/Continue según el índice del paso actual
+        // Navegación Back/Continue/Add Vehicle según el índice del paso actual
         // -------------------------------------------------
         if ('POST' === $_SERVER['REQUEST_METHOD']) {
-            if (isset($_POST['bb_continue'])) {
-                $idx = array_search($current_step, $this->steps, true);
-                if ($idx !== false && ($idx + 1) < count($this->steps)) {
-                    $current_step = $this->steps[$idx + 1];
+
+            // 1) Botón "Add another vehicle" SIEMPRE manda al paso 1 (vehicle)
+            if (isset($_POST['bb_add_vehicle'])) {
+
+                // Recuperar lista de vehículos ya guardados (JSON en bb_vehicles)
+                $vehicles = array();
+                if (!empty($_POST['bb_vehicles'])) {
+                    $decoded = json_decode(wp_unslash($_POST['bb_vehicles']), true);
+                    if (is_array($decoded)) {
+                        $vehicles = $decoded;
+                    }
                 }
-            } elseif (isset($_POST['bb_back'])) {
-                $idx = array_search($current_step, $this->steps, true);
-                if ($idx !== false && $idx > 0) {
-                    $current_step = $this->steps[$idx - 1];
+
+                // Vehículo actual (incluyendo paquete y add-ons)
+                $current_vehicle = array(
+                    'year'    => isset($_POST['car_year'])  ? sanitize_text_field($_POST['car_year'])  : '',
+                    'make'    => isset($_POST['car_make'])  ? sanitize_text_field($_POST['car_make'])  : '',
+                    'model'   => isset($_POST['car_model']) ? sanitize_text_field($_POST['car_model']) : '',
+                    'package' => isset($_POST['bb_package']) ? sanitize_text_field($_POST['bb_package']) : '',
+                    'addons'  => (isset($_POST['addons']) && is_array($_POST['addons']))
+                        ? array_map('sanitize_text_field', $_POST['addons'])
+                        : array(),
+                );
+
+                // Si el vehículo actual tiene datos, lo añadimos evitando duplicados
+                if (!empty($current_vehicle['year']) || !empty($current_vehicle['make']) || !empty($current_vehicle['model'])) {
+
+                    $already = false;
+                    foreach ($vehicles as $v) {
+                        if (
+                            ($v['year']    ?? '') === $current_vehicle['year'] &&
+                            ($v['make']    ?? '') === $current_vehicle['make'] &&
+                            ($v['model']   ?? '') === $current_vehicle['model'] &&
+                            ($v['package'] ?? '') === $current_vehicle['package'] &&
+                            implode(',', $v['addons'] ?? array()) === implode(',', $current_vehicle['addons'])
+                        ) {
+                            $already = true;
+                            break;
+                        }
+                    }
+
+                    if (!$already) {
+                        $vehicles[] = $current_vehicle;
+                    }
+                }
+
+                // Guardar de vuelta el JSON
+                $_POST['bb_vehicles'] = wp_json_encode($vehicles);
+
+                // Limpiar vehículo actual + paquete + addons
+                unset(
+                    $_POST['car_year'],
+                    $_POST['car_make'],
+                    $_POST['car_model'],
+                    $_POST['car_color'],
+                    $_POST['bb_package'],
+                    $_POST['addons']
+                );
+
+                // Forzar paso actual al Step 1
+                $current_step      = 'vehicle';
+                $_POST['bb_step']  = 'vehicle';
+
+            } else {
+
+                // 2) Navegación normal Continue / Back
+                if (isset($_POST['bb_continue'])) {
+                    $idx = array_search($current_step, $this->steps, true);
+                    if ($idx !== false && ($idx + 1) < count($this->steps)) {
+                        $current_step = $this->steps[$idx + 1];
+                    }
+
+                } elseif (isset($_POST['bb_back'])) {
+                    $idx = array_search($current_step, $this->steps, true);
+                    if ($idx !== false && $idx > 0) {
+                        $current_step = $this->steps[$idx - 1];
+                    }
                 }
             }
         }
 
-        // -------------------------------------------------
         // Si venimos con "Back" y el paso resultante es "vehicle",
-        // limpiamos los campos del vehículo para que el formulario
-        // se vea vacío (los vehículos quedan arriba en "Saved vehicles").
-        // -------------------------------------------------
+        // limpiamos los campos del vehículo (los ya añadidos quedan en bb_vehicles).
         if (
             'POST' === $_SERVER['REQUEST_METHOD']
             && isset($_POST['bb_back'])
@@ -277,50 +361,115 @@ class Bubbles_Wizard {
             );
         }
 
-        // -------------------------------------------------
-        // Layout principal (sidebar + panel de contenido)
-        // -------------------------------------------------
-        $sidebar = $this->render_sidebar($current_step);
-        $content = $this->render_step($current_step);
+        // Layout principal usando plantilla wizard-shell.php
+        $state  = $this->get_current_state(); // resumen actual
+        $wizard = $this;                      // pasar instancia a la vista
 
-        $out  = '<div class="bb-wizard bb-layout">';
-        $out .= $sidebar;
-        $out .= '<div class="bb-panel">'.$content.'</div>';
-        $out .= '</div>';
-
-        return $out;
+        ob_start();
+        include BB_PLUGIN_DIR . 'templates/wizard-shell.php';
+        return ob_get_clean();
     }
 
 
+    /* ------------------------- Estado para resumen + progreso ------------------------- */
 
-    /* ------------------------- Sidebar ------------------------- */
+    public function get_current_state() {
+        $state = array();
 
-    private function render_sidebar($current_step) {
-        $labels = array(
-            'vehicle' => array('label'=>'Vehicle info','meta'=>'Pick your vehicle'),
-            'package' => array('label'=>'Package & price','meta'=>'Choose a package'),
-            'addons'  => array('label'=>'Add-ons','meta'=>'Optional extras'),
-            'address' => array('label'=>'Address','meta'=>'Where should we go?'),
-            'date'    => array('label'=>'Date & time','meta'=>'Pick a slot'),
-            'confirm' => array('label'=>'Confirm & pay','meta'=>'Contact + final review'),
+        // 1) Lista de vehículos ya guardados (multi-vehículo) desde bb_vehicles (JSON)
+        $vehicles = array();
+        $vehicles_json = $this->get_posted_vehicles_json();
+        if (!empty($vehicles_json)) {
+            $decoded = json_decode($vehicles_json, true);
+            if (is_array($decoded)) {
+                $vehicles = $decoded;
+            }
+        }
+
+        // 2) Vehículo actual (el que está ahora en el formulario, con package/addons)
+        $current_vehicle = array(
+            'year'    => $this->posted('car_year'),
+            'make'    => $this->posted('car_make'),
+            'model'   => $this->posted('car_model'),
+            'package' => $this->posted('bb_package', ''),
+            'addons'  => $this->posted_array('addons'),
         );
 
-        $idx_current = array_search($current_step, $this->steps, true);
+        // Alias para compatibilidad
+        $state['vehicle']         = $current_vehicle;
+        $state['current_vehicle'] = $current_vehicle;
 
-        $html = '<aside class="bb-sidebar"><h3>Booking steps</h3><ul class="bb-steps-list">';
-        foreach ($this->steps as $i => $key) {
-            $cls   = ($i < $idx_current) ? 'done' : (($i === $idx_current) ? 'active' : 'pending');
-            $label = esc_html($labels[$key]['label']);
-            $meta  = esc_html($labels[$key]['meta']);
-            $html .= '<li class="'.$cls.'"><div class="label">'.$label.'</div><div class="meta">'.$meta.'</div></li>';
+        // Lista de vehículos ya confirmados (JSON)
+        $state['vehicles'] = $vehicles;
+
+        // Paquete + Add-ons del vehículo actual (para lógica de pasos)
+        $state['package'] = $current_vehicle['package'];
+        $state['addons']  = $current_vehicle['addons'];
+
+        // Dirección
+        $state['address'] = array(
+            'type'    => $this->posted('bb_address_type', ''),
+            'address' => $this->posted('bb_address', ''),
+            'extra'   => $this->posted('bb_address_extra', ''),
+            'city'    => $this->posted('bb_address_city', ''),
+            'state'   => $this->posted('bb_address_state', ''),
+            'zip'     => $this->posted('bb_address_zip', ''),
+        );
+
+        // Fecha y hora
+        $state['date'] = $this->posted('bb_date', '');
+        $state['time'] = $this->posted('bb_time', '');
+
+        // Contacto
+        $state['contact'] = array(
+            'name'  => $this->posted('bb_name', ''),
+            'phone' => $this->posted('bb_phone', ''),
+            'email' => $this->posted('bb_email', ''),
+        );
+
+        return $state;
+    }
+
+    /**
+     * Determina si un paso se considera "completo"
+     */
+    public function is_step_completed($step_slug, $state) {
+        switch ($step_slug) {
+            case 'vehicle':
+                // Completo si hay al menos un vehículo confirmado
+                if (!empty($state['vehicles']) && is_array($state['vehicles'])) {
+                    return true;
+                }
+                // O si el vehículo actual está lleno (cuando aún no se ha pulsado "Add another vehicle")
+                return !empty($state['vehicle']['year'])
+                    && !empty($state['vehicle']['make'])
+                    && !empty($state['vehicle']['model']);
+
+            case 'package':
+                return !empty($state['package']);
+
+            case 'addons':
+                return !empty($state['package']); // add-ons opcionales
+
+            case 'address':
+                return !empty($state['address']['address']);
+
+            case 'date':
+                return !empty($state['date']) && !empty($state['time']);
+
+            case 'confirm':
+                return false;
         }
-        $html .= '</ul></aside>';
-        return $html;
+        return false;
+    }
+
+    public function render_summary($state, $current_step) {
+        // El summary visual se maneja en templates/wizard-shell.php + Bubbles_Summary
     }
 
     /* ------------------------- Dispatch por paso ------------------------- */
 
-    private function render_step($step) {
+    public function render_step($step) {
         switch ($step) {
             case 'vehicle':
                 return $this->render_step_vehicle();
@@ -339,29 +488,23 @@ class Bubbles_Wizard {
         }
     }
 
-  
+    /* ------------------------- STEP 1: VEHICLE ------------------------- */
 
-/* ------------------------- STEP 1: VEHICLE ------------------------- */
+    protected function render_step_vehicle() {
+        $wizard = $this;
 
-protected function render_step_vehicle() {
-    // Por si quieres usar helpers del wizard en las plantillas
-    $wizard = $this;
+        global $bubbles_vehicle_picker;
 
-    // Usamos la instancia global del Vehicle Picker
-    global $bubbles_vehicle_picker;
+        if (!class_exists('Bubbles_Vehicle_Picker')) {
+            require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-vehicle-picker.php';
+        }
 
-    if (!class_exists('Bubbles_Vehicle_Picker')) {
-        require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-vehicle-picker.php';
+        if (!isset($bubbles_vehicle_picker) || !($bubbles_vehicle_picker instanceof Bubbles_Vehicle_Picker)) {
+            $bubbles_vehicle_picker = new Bubbles_Vehicle_Picker();
+        }
+
+        return $bubbles_vehicle_picker->render_form();
     }
-
-    if (!isset($bubbles_vehicle_picker) || !($bubbles_vehicle_picker instanceof Bubbles_Vehicle_Picker)) {
-        $bubbles_vehicle_picker = new Bubbles_Vehicle_Picker();
-    }
-
-    // El Vehicle Picker se encarga de la lógica + plantilla
-    return $bubbles_vehicle_picker->render_form();
-}
-
 
     /* ------------------------- STEP 2: PACKAGE ------------------------- */
 
@@ -373,12 +516,10 @@ protected function render_step_vehicle() {
             'model' => $this->posted('car_model'),
         );
 
-        // 1) Obtener precios desde BB_Pricing (Bubbles Custom Pricing)
         $pricing_packages = function_exists('bb_custom_price_quote')
             ? bb_custom_price_quote($vehicle)
             : array();
 
-        // 2) Metadatos extendidos de paquetes
         $meta_all = class_exists('Bubbles_Packages')
             ? Bubbles_Packages::get_all()
             : array();
@@ -396,125 +537,125 @@ protected function render_step_vehicle() {
 
     protected function render_step_addons() {
 
-    // El wizard solo pide "dame el catálogo de addons"
-    $addons_catalog = apply_filters('bubbles_addons_catalog', array());
+        $addons_catalog = apply_filters('bubbles_addons_catalog', array());
 
-    $prev_addons  = $this->posted_array('addons');
-    $selected_pkg = $this->posted('bb_package','');
+        $prev_addons  = $this->posted_array('addons');
+        $selected_pkg = $this->posted('bb_package','');
 
-    $wizard = $this;
+        $wizard = $this;
 
-    ob_start();
-    include plugin_dir_path(__FILE__) . '../templates/wizard-step-addons.php';
-    return ob_get_clean();
-    
-}    /* ------------------------- STEP 4: ADDRESS (con plantilla) ------------------------- */
+        ob_start();
+        include plugin_dir_path(__FILE__) . '../templates/wizard-step-addons.php';
+        return ob_get_clean();
+    }
 
-protected function render_step_address() {
+    /* ------------------------- STEP 4: ADDRESS ------------------------- */
 
-    $address_type  = $this->posted('bb_address_type','');
-    $address       = $this->posted('bb_address','');
-    $address_extra = $this->posted('bb_address_extra','');
+    protected function render_step_address() {
 
-    $errors = $this->errors;
-    $wizard = $this;
+        $address_type  = $this->posted('bb_address_type','');
+        $address       = $this->posted('bb_address','');
+        $address_extra = $this->posted('bb_address_extra','');
 
-    ob_start();
-    include plugin_dir_path(__FILE__) . '../templates/wizard-step-address.php';
-    return ob_get_clean();
-}
+        $errors = $this->errors;
+        $wizard = $this;
+
+        ob_start();
+        include plugin_dir_path(__FILE__) . '../templates/wizard-step-address.php';
+        return ob_get_clean();
+    }
 
     /* ------------------------- STEP 5: DATE ------------------------- */
 
-   protected function render_step_date() {
+    protected function render_step_date() {
 
-    $bb_date = $this->posted('bb_date');
-    $bb_time = $this->posted('bb_time');
-    $pkg_id  = $this->posted('bb_package');
+        $bb_date = $this->posted('bb_date');
+        $bb_time = $this->posted('bb_time');
+        $pkg_id  = $this->posted('bb_package');
 
-    $duration_hours = class_exists('Bubbles_Packages')
-        ? Bubbles_Packages::get_duration($pkg_id)
-        : 2.0;
+        $duration_hours = class_exists('Bubbles_Packages')
+            ? Bubbles_Packages::get_duration($pkg_id)
+            : 2.0;
 
-    if (class_exists('Bubbles_Availability')) {
-        $min_date = Bubbles_Availability::get_min_bookable_date();
-        $max_date = Bubbles_Availability::get_max_bookable_date();
-    } else {
-        $today    = current_time('Y-m-d');
-        $min_date = date('Y-m-d', strtotime($today . ' +1 day'));
-        $max_date = date('Y-m-d', strtotime($min_date . ' +59 days'));
-    }
-
-    $min_year  = (int) substr($min_date, 0, 4);
-    $min_month = (int) substr($min_date, 5, 2);
-    $max_year  = (int) substr($max_date, 0, 4);
-    $max_month = (int) substr($max_date, 5, 2);
-
-    $cal_year  = isset($_POST['bb_cal_year'])  ? (int) $_POST['bb_cal_year']  : 0;
-    $cal_month = isset($_POST['bb_cal_month']) ? (int) $_POST['bb_cal_month'] : 0;
-
-    if ($cal_year < 1 || $cal_month < 1 || $cal_month > 12) {
-        $year  = $min_year;
-        $month = $min_month;
-    } else {
-        $year  = $cal_year;
-        $month = $cal_month;
-    }
-
-    if (isset($_POST['bb_cal_prev'])) {
-        $month--;
-        if ($month < 1) { $month = 12; $year--; }
-    }
-    if (isset($_POST['bb_cal_next'])) {
-        $month++;
-        if ($month > 12) { $month = 1; $year++; }
-    }
-
-    $ym     = $year * 100 + $month;
-    $ym_min = $min_year * 100 + $min_month;
-    $ym_max = $max_year * 100 + $max_month;
-
-    if ($ym < $ym_min) { $year = $min_year;  $month = $min_month; }
-    if ($ym > $ym_max) { $year = $max_year;  $month = $max_month; }
-
-    $first_ts      = strtotime("$year-$month-01");
-    $days_in_month = (int) date('t', $first_ts);
-    $first_weekday = (int) date('N', $first_ts); // 1=Mon
-    $month_label   = date_i18n('F Y', $first_ts);
-
-    $is_bookable = function($ymd) use ($min_date, $max_date) {
         if (class_exists('Bubbles_Availability')) {
-            return Bubbles_Availability::is_date_bookable($ymd);
-        }
-        return ($ymd > current_time('Y-m-d'));
-    };
-
-    $slots = array();
-    if (!empty($bb_date)) {
-        if (class_exists('Bubbles_Availability')) {
-            $slots = Bubbles_Availability::get_slots_for_date(
-                $bb_date,
-                array('duration_hours' => $duration_hours)
-            );
+            $min_date = Bubbles_Availability::get_min_bookable_date();
+            $max_date = Bubbles_Availability::get_max_bookable_date();
         } else {
-            $slots = array(
-                array('value'=>'09:00-11:00','label'=>'9:00 AM – 11:00 AM'),
-                array('value'=>'11:00-13:00','label'=>'11:00 AM – 1:00 PM'),
-                array('value'=>'13:00-15:00','label'=>'1:00 PM – 3:00 PM'),
-            );
+            $today    = current_time('Y-m-d');
+            $min_date = date('Y-m-d', strtotime($today . ' +1 day'));
+            $max_date = date('Y-m-d', strtotime($min_date . ' +59 days'));
         }
+
+        $min_year  = (int) substr($min_date, 0, 4);
+        $min_month = (int) substr($min_date, 5, 2);
+        $max_year  = (int) substr($max_date, 0, 4);
+        $max_month = (int) substr($max_date, 5, 2);
+
+        $cal_year  = isset($_POST['bb_cal_year'])  ? (int) $_POST['bb_cal_year']  : 0;
+        $cal_month = isset($_POST['bb_cal_month']) ? (int) $_POST['bb_cal_month'] : 0;
+
+        if ($cal_year < 1 || $cal_month < 1 || $cal_month > 12) {
+            $year  = $min_year;
+            $month = $min_month;
+        } else {
+            $year  = $cal_year;
+            $month = $cal_month;
+        }
+
+        if (isset($_POST['bb_cal_prev'])) {
+            $month--;
+            if ($month < 1) { $month = 12; $year--; }
+        }
+        if (isset($_POST['bb_cal_next'])) {
+            $month++;
+            if ($month > 12) { $month = 1; $year++; }
+        }
+
+        $ym     = $year * 100 + $month;
+        $ym_min = $min_year * 100 + $min_month;
+        $ym_max = $max_year * 100 + $max_month;
+
+        if ($ym < $ym_min) { $year = $min_year;  $month = $min_month; }
+        if ($ym > $ym_max) { $year = $max_year;  $month = $max_month; }
+
+        $first_ts      = strtotime("$year-$month-01");
+        $days_in_month = (int) date('t', $first_ts);
+        $first_weekday = (int) date('N', $first_ts); // 1=Mon
+        $month_label   = date_i18n('F Y', $first_ts);
+
+        $is_bookable = function($ymd) use ($min_date, $max_date) {
+            if (class_exists('Bubbles_Availability')) {
+                return Bubbles_Availability::is_date_bookable($ymd);
+            }
+            return ($ymd > current_time('Y-m-d'));
+        };
+
+        $slots = array();
+        if (!empty($bb_date)) {
+            if (class_exists('Bubbles_Availability')) {
+                $slots = Bubbles_Availability::get_slots_for_date(
+                    $bb_date,
+                    array('duration_hours' => $duration_hours)
+                );
+            } else {
+                $slots = array(
+                    array('value'=>'09:00-11:00','label'=>'9:00 AM – 11:00 AM'),
+                    array('value'=>'11:00-13:00','label'=>'11:00 AM – 1:00 PM'),
+                    array('value'=>'13:00-15:00','label'=>'1:00 PM – 3:00 PM'),
+                );
+            }
+        }
+
+        $wizard = $this;
+        $errors = $this->errors;
+
+        $allow_prev = ($year * 100 + $month) > $ym_min;
+        $allow_next = ($year * 100 + $month) < $ym_max;
+
+        ob_start();
+        include BB_PLUGIN_DIR . 'templates/wizard-step-date.php';
+        return ob_get_clean();
     }
-
-    $wizard = $this;
-    $errors = $this->errors;
-
-    $allow_prev = ($year * 100 + $month) > $ym_min;
-    $allow_next = ($year * 100 + $month) < $ym_max;
-
-    ob_start();
-    include BB_PLUGIN_DIR . 'templates/wizard-step-date.php';
-    return ob_get_clean();
-}
 
     /* ------------------------- STEP 6: CONFIRM ------------------------- */
 
@@ -586,15 +727,12 @@ protected function render_step_address() {
     /* ------------------------- SUBMIT FINAL ------------------------- */
 
     private function handle_final_submit() {
-        // Asegurarnos de que WooCommerce está activo
         if (!function_exists('WC')) {
             return '<div class="bb-wizard bb-layout"><div class="bb-panel bb-confirmation"><h3>Booking error</h3><p>WooCommerce is not active.</p></div></div>';
         }
 
-        // ID del producto "Car Detailing Booking"
-        $product_id = 240; // 👈 tu producto virtual
+        $product_id = 240; // producto virtual
 
-        // Datos principales del formulario
         $car_year  = $this->posted('car_year');
         $car_make  = $this->posted('car_make');
         $car_model = $this->posted('car_model');
@@ -759,10 +897,8 @@ new Bubbles_Wizard();
 } // fin if !class_exists
 
 // Guardar los datos del booking en la línea del pedido
-// Guardar solo los datos útiles del booking en la línea del pedido
 add_action('woocommerce_checkout_create_order_line_item', function($item, $cart_item_key, $values) {
 
-    // Claves de $cart_item_data => Etiqueta bonita en el pedido
     $fields = array(
         'car_year'      => 'Car year',
         'car_make'      => 'Car make',
@@ -777,7 +913,6 @@ add_action('woocommerce_checkout_create_order_line_item', function($item, $cart_
         'phone'         => 'Phone',
         'email'         => 'Email',
         'notes'         => 'Notes',
-        // si quieres mostrar también el tipo de address, puedes descomentar:
         // 'address_type'  => 'Address type',
     );
 
@@ -812,11 +947,11 @@ add_filter('woocommerce_before_calculate_totals', function($cart) {
         }
     }
 });
+
 // Quitar el enlace del producto "Car Detailing Booking" en pedidos y emails
 add_filter('woocommerce_order_item_permalink', function($permalink, $item, $order) {
     $product_id = $item->get_product_id();
 
-    // ID del producto de booking (ajusta si usas otro)
     if ($product_id == 240) {
         return ''; // sin enlace
     }

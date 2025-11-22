@@ -1,23 +1,222 @@
-.bb-layout{display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start}
-@media(max-width:900px){.bb-layout{grid-template-columns:1fr}}
-.bb-sidebar{border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#fff}
-.bb-steps-list{list-style:none;margin:0;padding:0}
-.bb-steps-list li{padding:8px 10px;border-radius:8px;margin-bottom:6px;border:1px solid #e5e7eb}
-.bb-steps-list li.active{border-color:#111;background:#111;color:#fff}
-.bb-steps-list li.done{border-color:#16a34a}
-.bb-panel{border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#fff}
-.bb-section-title{margin-top:0}
-.bb-step-form .bb-actions{display:flex;gap:10px;margin-top:16px}
-.bb-packages{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-.bb-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px;display:block}
-.bb-addons{display:grid;gap:12px}
-.bb-addon-card{display:flex;gap:12px;align-items:flex-start;border:1px solid #e5e7eb;border-radius:10px;padding:12px}
-.bb-addon-card h4{margin:0 0 2px;font-size:15px}
-.bb-addon-card p{margin:0;font-size:13px;color:#555}
+/* ---- Layout general del wizard (ligado al tema) ---- */
 
+/* Contenedor general del wizard */
+.bb-wizard-wrapper{
+    /* Paleta del wizard tomada del tema */
+    --bb-accent: var(--wp--preset--color--primary, currentColor);
+    --bb-surface: var(--wp--preset--color--background, #ffffff);
 
-/* ---- Calendario compacto estilo Panda Hub ---- */
+    max-width:1100px;
+    margin:0 auto;
+    padding:24px 16px;
+}
 
+/* Layout 2 columnas: izquierda (contenido) + derecha (resumen) */
+.bb-layout.bb-left-content-right-summary{
+    display:grid;
+    grid-template-columns:3fr 1fr;
+    gap:24px;
+    align-items:flex-start;
+}
+
+/* Versión por defecto por si se usa bb-layout en otros sitios */
+.bb-layout{
+    display:grid;
+    grid-template-columns:2fr 1fr;
+    gap:24px;
+    align-items:flex-start;
+}
+
+/* Responsive: en móvil, una sola columna */
+@media(max-width:900px){
+    .bb-layout{
+        grid-template-columns:1fr;
+    }
+}
+
+/* Panel genérico: respeta colores del tema */
+.bb-panel{
+    border:1px solid rgba(0,0,0,0.08);
+    border-radius:12px;
+    padding:16px;
+    background:var(--bb-surface);
+    color:inherit;
+}
+
+/* Contenido del paso actual */
+.bb-step-content{
+    /* usa bb-panel para el estilo base */
+}
+
+/* Resumen lateral a la derecha */
+.bb-summary{
+    border:1px solid rgba(0,0,0,0.08);
+    border-radius:12px;
+    padding:16px;
+    background:var(--bb-surface);
+    color:inherit;
+    position:sticky;
+    top:16px;
+}
+
+/* Título del resumen */
+.bb-summary-title{
+    margin:0 0 8px;
+    font-size:15px;
+    font-weight:600;
+}
+
+/* Bloques dentro del resumen */
+.bb-summary-section{
+    margin-bottom:12px;
+}
+
+.bb-summary-section h4{
+    margin:0 0 4px;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    opacity:0.8;
+}
+
+.bb-summary-main{
+    margin:0 0 2px;
+    font-weight:600;
+    font-size:14px;
+}
+
+/* Lista de addons en el resumen */
+.bb-summary-list{
+    margin:0;
+    padding-left:16px;
+    font-size:13px;
+}
+
+.bb-summary-notes{
+    margin:4px 0 0;
+    font-size:13px;
+    opacity:0.9;
+}
+
+/* Total estimado */
+.bb-summary-total{
+    margin-top:12px;
+    padding-top:8px;
+    border-top:1px solid rgba(0,0,0,0.08);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:14px;
+}
+
+/* Bloque para el botón de segundo vehículo (en el paso Address) */
+.bb-summary-second-vehicle{
+    margin-top:14px;
+    font-size:13px;
+}
+
+/* Botón outline reutilizable – usa el color primario del tema */
+.bb-btn-outline{
+    display:inline-block;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--bb-accent);
+    background:transparent;
+    font-size:13px;
+    cursor:pointer;
+    color:var(--bb-accent);
+}
+
+/* Título de sección dentro de cada paso */
+.bb-section-title{
+    margin-top:0;
+}
+
+/* Acciones dentro de cada formulario de paso */
+.bb-step-form .bb-actions{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+}
+
+/* Grid de paquetes */
+.bb-packages{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:12px;
+}
+
+/* Card genérica */
+.bb-card{
+    border:1px solid rgba(0,0,0,0.08);
+    border-radius:10px;
+    padding:12px;
+    display:block;
+    background:var(--bb-surface);
+}
+
+/* Grid de add-ons */
+.bb-addons{
+    display:grid;
+    gap:12px;
+}
+
+.bb-addon-card{
+    display:flex;
+    gap:12px;
+    align-items:flex-start;
+    border:1px solid rgba(0,0,0,0.08);
+    border-radius:10px;
+    padding:12px;
+    background:var(--bb-surface);
+}
+
+.bb-addon-card h4{
+    margin:0 0 2px;
+    font-size:15px;
+}
+
+.bb-addon-card p{
+    margin:0;
+    font-size:13px;
+    opacity:0.9;
+}
+
+/* ---- Barra de pasos arriba (progress) ---- */
+
+.bb-steps-top{
+    display:flex;
+    gap:8px;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+}
+
+/* Paso por defecto: usa superficie y color del tema */
+.bb-step-item{
+    flex:1;
+    text-align:center;
+    padding:6px 10px;
+    border-radius:999px;
+    font-size:13px;
+    border:1px solid rgba(0,0,0,0.12);
+    background:var(--bb-surface);
+    color:inherit;
+}
+
+/* Paso activo: usa color primario del tema */
+.bb-step-item.is-active{
+    background-color: #000000;
+        border-color:var(--bb-accent);
+    /*font-weight:600;*/
+    color: #ffffff; /* ← letra clara */
+}
+
+/* Paso completado: borde con color del tema y fondo suave */
+.bb-step-item.is-complete{
+    border-color:var(--bb-accent);
+    background:rgba(0,0,0,0.04);
+      color:#374151;
+}
 
 /* ---- Calendario compacto sin colores forzados ---- */
 
@@ -89,6 +288,7 @@
     cursor: default;
     box-shadow: none;
 }
+
 /* --- Layout en dos columnas para Date & Time --- */
 .bb-date-layout {
     display: grid;
@@ -113,6 +313,5 @@
         grid-template-columns: 1fr;
     }
 }
-
 
 /* ----fin de calenario ---- */
