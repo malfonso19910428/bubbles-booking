@@ -123,9 +123,27 @@ class Bubbles_Wizard {
     /* ------------------------- Render principal ------------------------- */
     public function render() {
 
-        /* 1) Confirmación final: enviar a WooCommerce checkout */
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bb_confirm_booking'])) {
-            return $this->handle_final_submit();
+        // 0) Retorno desde Stripe (?bb_stripe=success / cancel)
+        if ( class_exists('Bubbles_Confirm_Checkout') ) {
+            $view = Bubbles_Confirm_Checkout::maybe_render_stripe_return();
+            if ( ! empty($view) ) {
+                return $view;
+            }
+        }
+
+        /**
+         * 1) Confirmación final:
+         *    - Ahora delega en Bubbles_Confirm_Checkout (Stripe + creación de reserva).
+         */
+        if (
+            $_SERVER['REQUEST_METHOD'] === 'POST'
+            && isset($_POST['bb_confirm_booking'])
+        ) {
+            if ( class_exists('Bubbles_Confirm_Checkout') ) {
+                return Bubbles_Confirm_Checkout::handle_booking_submit();
+            } else {
+                return '<div class="bb-wizard bb-layout"><div class="bb-panel bb-confirmation"><h3>Booking error</h3><p>Payment controller (Bubbles_Confirm_Checkout) is not available.</p></div></div>';
+            }
         }
 
         /* 2) Flujo normal de pasos */
@@ -216,7 +234,7 @@ class Bubbles_Wizard {
                         'Please choose a valid working day. Same-day and past dates are not available.',
                         'bubbles-booking'
                     );
-                } elseif (!$time_ok) {
+                } elseif ($time_ok === false) {
                     $this->errors['date'] = __(
                         'Please select a time slot for your service.',
                         'bubbles-booking'
@@ -362,11 +380,12 @@ class Bubbles_Wizard {
         }
 
         // Layout principal usando plantilla wizard-shell.php
-        $state  = $this->get_current_state(); // resumen actual
+        $state  = $this->get_current_state(); // resumen actual (+ grand_total + summary)
         $wizard = $this;                      // pasar instancia a la vista
+        $current_step = $current_step;        // por claridad
 
         ob_start();
-        include BB_PLUGIN_DIR . 'templates/wizard-shell.php';
+        include BB_PLUGIN_DIR . 'templates/wizard/wizard-shell.php';
         return ob_get_clean();
     }
 
@@ -427,6 +446,32 @@ class Bubbles_Wizard {
             'email' => $this->posted('bb_email', ''),
         );
 
+        /**
+         * 🔹 Puente interno usando Bubbles_Summary
+         * para que el propio $state traiga total y detalle del resumen.
+         */
+        if (!class_exists('Bubbles_Summary')) {
+            require_once BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-summary.php';
+        }
+
+        $summary = new Bubbles_Summary($state);
+
+        // Totales
+        $totals = $summary->get_totals();
+        $state['grand_total'] = isset($totals['grand_total'])
+            ? (float) $totals['grand_total']
+            : 0.0;
+
+        // Resumen completo opcional
+        $state['summary'] = array(
+            'vehicles'          => $summary->get_vehicles(),
+            'detailed_vehicles' => $summary->get_detailed_vehicles(),
+            'totals'            => $totals,
+            'address'           => $summary->get_address(),
+            'date'              => $summary->get_date(),
+            'time'              => $summary->get_time(),
+        );
+
         return $state;
     }
 
@@ -482,6 +527,7 @@ class Bubbles_Wizard {
             case 'date':
                 return $this->render_step_date();
             case 'confirm':
+                // IMPORTANTE: usar la plantilla de "Confirm & pay"
                 return $this->render_step_confirm();
             default:
                 return '<p class="notice-error">Invalid step.</p>';
@@ -496,7 +542,7 @@ class Bubbles_Wizard {
         global $bubbles_vehicle_picker;
 
         if (!class_exists('Bubbles_Vehicle_Picker')) {
-            require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-vehicle-picker.php';
+            require_once BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-vehicle-picker.php';
         }
 
         if (!isset($bubbles_vehicle_picker) || !($bubbles_vehicle_picker instanceof Bubbles_Vehicle_Picker)) {
@@ -529,7 +575,7 @@ class Bubbles_Wizard {
         $wizard = $this;
 
         ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-package.php';
+       include BB_PLUGIN_DIR . 'templates/wizard/wizard-step-package.php';
         return ob_get_clean();
     }
 
@@ -545,7 +591,7 @@ class Bubbles_Wizard {
         $wizard = $this;
 
         ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-addons.php';
+        include BB_PLUGIN_DIR .'/templates/wizard/wizard-step-addons.php';
         return ob_get_clean();
     }
 
@@ -561,7 +607,7 @@ class Bubbles_Wizard {
         $wizard = $this;
 
         ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-address.php';
+        include BB_PLUGIN_DIR . '/templates/wizard/wizard-step-address.php';
         return ob_get_clean();
     }
 
@@ -653,7 +699,7 @@ class Bubbles_Wizard {
         $allow_next = ($year * 100 + $month) < $ym_max;
 
         ob_start();
-        include BB_PLUGIN_DIR . 'templates/wizard-step-date.php';
+        include BB_PLUGIN_DIR . 'templates/wizard/wizard-step-date.php';
         return ob_get_clean();
     }
 
@@ -661,233 +707,22 @@ class Bubbles_Wizard {
 
     protected function render_step_confirm() {
 
-        $vehicle = array(
-            'year'  => $this->posted('car_year','—'),
-            'make'  => $this->posted('car_make','—'),
-            'model' => $this->posted('car_model','—'),
-        );
+        // Obtenemos el estado completo con grand_total ya calculado
+        $state = $this->get_current_state();
 
-        $pkg_id      = $this->posted('bb_package','');
-        $addons_sel  = $this->posted_array('addons');
-        $address_typ = $this->posted('bb_address_type','—');
-        $address     = $this->posted('bb_address','—');
-        $address_ext = $this->posted('bb_address_extra','');
-        $bb_date     = $this->posted('bb_date','—');
-        $bb_time     = $this->posted('bb_time','—');
+        $bb_total_amount = isset($state['grand_total'])
+            ? (float) $state['grand_total']
+            : 0.0;
 
-        $bb_name  = $this->posted('bb_name','');
-        $bb_phone = $this->posted('bb_phone','');
-        $bb_email = $this->posted('bb_email','');
-        $bb_notes = $this->posted('bb_notes','');
-
-        $vehicle_for_price = array(
-            'year'  => $this->posted('car_year'),
-            'make'  => $this->posted('car_make'),
-            'model' => $this->posted('car_model'),
-        );
-
-        $package_label = $pkg_id;
-        $package_price = '';
-
-        if (function_exists('bb_custom_price_quote')) {
-            $quote = bb_custom_price_quote($vehicle_for_price);
-            if (is_array($quote)) {
-                foreach ($quote as $p) {
-                    if (!empty($p['id']) && $p['id'] === $pkg_id) {
-                        $package_label = !empty($p['label']) ? $p['label'] : $pkg_id;
-                        $package_price = '$' . number_format_i18n((float)$p['price'], 2);
-                        break;
-                    }
-                }
-            }
-        }
-
-        $pkg_meta = class_exists('Bubbles_Packages') ? Bubbles_Packages::get($pkg_id) : null;
-        $pkg_desc = $pkg_meta['description'] ?? '';
-
-        $catalog = apply_filters('bubbles_addons_catalog', array(
-            array('slug'=>'heavy_pet_hair','name'=>'Heavy Pet Hair Removal'),
-            array('slug'=>'light_pet_hair','name'=>'Light Pet Hair Removal'),
-            array('slug'=>'car_baby_seat','name'=>'Car Baby Seat'),
-        ));
-        $addons_map = array();
-        foreach ($catalog as $it) {
-            if (!empty($it['slug'])) {
-                $addons_map[$it['slug']] = $it['name'];
-            }
-        }
+        // Por si quieres usar info del resumen en la plantilla:
+        $bb_summary = isset($state['summary']) ? $state['summary'] : array();
 
         $wizard = $this;
 
         ob_start();
-        include plugin_dir_path(__FILE__) . '../templates/wizard-step-confirm.php';
+        // Mantengo tu nombre original de plantilla:
+       include BB_PLUGIN_DIR . '/templates/wizard/wizard-step-confirm-checkout.php';
         return ob_get_clean();
-    }
-
-    /* ------------------------- SUBMIT FINAL ------------------------- */
-
-    private function handle_final_submit() {
-        if (!function_exists('WC')) {
-            return '<div class="bb-wizard bb-layout"><div class="bb-panel bb-confirmation"><h3>Booking error</h3><p>WooCommerce is not active.</p></div></div>';
-        }
-
-        $product_id = 240; // producto virtual
-
-        $car_year  = $this->posted('car_year');
-        $car_make  = $this->posted('car_make');
-        $car_model = $this->posted('car_model');
-
-        $pkg_id    = $this->posted('bb_package');
-        $addons    = $this->posted_array('addons');
-
-        $address_type  = $this->posted('bb_address_type');
-        $address       = $this->posted('bb_address');
-        $address_extra = $this->posted('bb_address_extra');
-        $place_id      = $this->posted('bb_place_id');
-
-        $addr_street = $this->posted('bb_address_street');
-        $addr_city   = $this->posted('bb_address_city');
-        $addr_state  = $this->posted('bb_address_state');
-        $addr_zip    = $this->posted('bb_address_zip');
-        $addr_lat    = $this->posted('bb_address_lat');
-        $addr_lng    = $this->posted('bb_address_lng');
-
-        $bb_date = $this->posted('bb_date');
-        $bb_time = $this->posted('bb_time');
-
-        $bb_name  = $this->posted('bb_name');
-        $bb_phone = $this->posted('bb_phone');
-        $bb_email = $this->posted('bb_email');
-        $bb_notes = isset($_POST['bb_notes']) ? wp_kses_post($_POST['bb_notes']) : '';
-
-        /* ---- 1) Calcular precio base del paquete ---- */
-        $base_price = null;
-
-        $vehicle_for_price = array(
-            'year'  => $car_year,
-            'make'  => $car_make,
-            'model' => $car_model,
-        );
-
-        if (function_exists('bb_custom_price_quote') && $pkg_id) {
-            $quote = bb_custom_price_quote($vehicle_for_price);
-            if (is_array($quote)) {
-                foreach ($quote as $p) {
-                    if (!empty($p['id']) && $p['id'] === $pkg_id && isset($p['price'])) {
-                        $base_price = (float) $p['price'];
-                        break;
-                    }
-                }
-            }
-        }
-
-        /* ---- 2) Calcular precio de add-ons ---- */
-        $addons_total = 0.0;
-        if (!empty($addons)) {
-            $addons_catalog = apply_filters('bubbles_addons_catalog', array(
-                array(
-                    'slug'  => 'heavy_pet_hair',
-                    'name'  => 'Heavy Pet Hair Removal',
-                    'desc'  => 'Intensive pet-hair removal from seats, carpets, and hard-to-reach areas.',
-                    'price' => 45,
-                ),
-                array(
-                    'slug'  => 'light_pet_hair',
-                    'name'  => 'Light Pet Hair Removal',
-                    'desc'  => 'Light pet-hair removal in visible areas.',
-                    'price' => 25,
-                ),
-                array(
-                    'slug'  => 'car_baby_seat',
-                    'name'  => 'Car Baby Seat',
-                    'desc'  => 'Detailed cleaning of the child car seat (accessible areas).',
-                    'price' => 25,
-                ),
-            ));
-
-            $price_map = array();
-            foreach ($addons_catalog as $ad) {
-                if (!empty($ad['slug'])) {
-                    $price_map[$ad['slug']] = isset($ad['price']) ? (float)$ad['price'] : 0.0;
-                }
-            }
-
-            foreach ($addons as $slug) {
-                if (isset($price_map[$slug])) {
-                    $addons_total += $price_map[$slug];
-                }
-            }
-        }
-
-        /* ---- 3) Precio final ---- */
-        $final_price = null;
-        if ($base_price !== null) {
-            $final_price = $base_price + $addons_total;
-        } elseif ($addons_total > 0) {
-            $final_price = $addons_total;
-        }
-
-        /* ---- 4) (Opcional) Crear registro interno en Bubbles_Bookings ---- */
-        if (class_exists('Bubbles_Bookings')) {
-            $data = array(
-                'customer_name'   => $bb_name,
-                'customer_phone'  => $bb_phone,
-                'customer_email'  => $bb_email,
-                'vehicle_year'    => $car_year,
-                'vehicle_make'    => $car_make,
-                'vehicle_model'   => $car_model,
-                'package'         => $pkg_id,
-                'date'            => $bb_date,
-                'time'            => $bb_time,
-                'status'          => 'pending',
-                'notes'           => $bb_notes,
-                'address_type'    => $address_type,
-                'address'         => $address,
-                'address_extra'   => $address_extra,
-            );
-            Bubbles_Bookings::create($data);
-        }
-
-        /* ---- 5) Vaciar carrito y añadir el producto 240 ---- */
-        WC()->cart->empty_cart();
-
-        $cart_item_data = array(
-            'car_year'          => $car_year,
-            'car_make'          => $car_make,
-            'car_model'         => $car_model,
-            'package'           => $pkg_id,
-            'addons'            => $addons,
-            'date'              => $bb_date,
-            'time'              => $bb_time,
-            'name'              => $bb_name,
-            'phone'             => $bb_phone,
-            'email'             => $bb_email,
-            'notes'             => $bb_notes,
-            'address_type'      => $address_type,
-            'address'           => $address,
-            'address_extra'     => $address_extra,
-            'bb_place_id'       => $place_id,
-            'bb_address_street' => $addr_street,
-            'bb_address_city'   => $addr_city,
-            'bb_address_state'  => $addr_state,
-            'bb_address_zip'    => $addr_zip,
-            'bb_address_lat'    => $addr_lat,
-            'bb_address_lng'    => $addr_lng,
-        );
-
-        if ($final_price !== null) {
-            $cart_item_data['custom_price'] = $final_price;
-        }
-
-        $added = WC()->cart->add_to_cart($product_id, 1, 0, array(), $cart_item_data);
-
-        if (!$added) {
-            return '<div class="bb-wizard bb-layout"><div class="bb-panel bb-confirmation"><h3>Booking error</h3><p>We could not add the booking to your cart. Please try again.</p></div></div>';
-        }
-
-        /* ---- 6) Redirigir a checkout ---- */
-        wp_safe_redirect(wc_get_checkout_url());
-        exit;
     }
 }
 
@@ -895,66 +730,3 @@ class Bubbles_Wizard {
 new Bubbles_Wizard();
 
 } // fin if !class_exists
-
-// Guardar los datos del booking en la línea del pedido
-add_action('woocommerce_checkout_create_order_line_item', function($item, $cart_item_key, $values) {
-
-    $fields = array(
-        'car_year'      => 'Car year',
-        'car_make'      => 'Car make',
-        'car_model'     => 'Car model',
-        'package'       => 'Package',
-        'addons'        => 'Add-ons',
-        'date'          => 'Date',
-        'time'          => 'Time',
-        'address'       => 'Service address',
-        'address_extra' => 'Address details',
-        'name'          => 'Customer name',
-        'phone'         => 'Phone',
-        'email'         => 'Email',
-        'notes'         => 'Notes',
-        // 'address_type'  => 'Address type',
-    );
-
-    foreach ($fields as $key => $label) {
-        if (!empty($values[$key])) {
-            $value = $values[$key];
-
-            if (is_array($value)) {
-                $value = implode(', ', array_map('sanitize_text_field', $value));
-            } else {
-                $value = sanitize_text_field($value);
-            }
-
-            $item->add_meta_data($label, $value);
-        }
-    }
-}, 10, 3);
-
-
-// Aplicar custom_price al carrito (precio dinámico)
-add_filter('woocommerce_before_calculate_totals', function($cart) {
-    if (is_admin() && !defined('DOING_AJAX')) {
-        return;
-    }
-    if (empty($cart) || !is_a($cart, 'WC_Cart')) {
-        return;
-    }
-
-    foreach ($cart->get_cart() as $cart_item_key => $item) {
-        if (isset($item['custom_price']) && is_numeric($item['custom_price']) && $item['custom_price'] > 0) {
-            $item['data']->set_price($item['custom_price']);
-        }
-    }
-});
-
-// Quitar el enlace del producto "Car Detailing Booking" en pedidos y emails
-add_filter('woocommerce_order_item_permalink', function($permalink, $item, $order) {
-    $product_id = $item->get_product_id();
-
-    if ($product_id == 240) {
-        return ''; // sin enlace
-    }
-
-    return $permalink;
-}, 10, 3);

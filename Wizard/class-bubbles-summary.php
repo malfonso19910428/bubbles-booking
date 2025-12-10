@@ -272,4 +272,19 @@ class Bubbles_Summary {
     public function get_time() {
         return isset($this->state['time']) ? (string) $this->state['time'] : '';
     }
+        /**
+     * Devuelve toda la info útil del resumen en un solo array,
+     * para usar como "puente" en las plantillas del wizard.
+     */
+    public function as_array() {
+        return array(
+            'vehicles'          => $this->get_vehicles(),
+            'detailed_vehicles' => $this->get_detailed_vehicles(),
+            'totals'            => $this->get_totals(),
+            'address'           => $this->get_address(),
+            'date'              => $this->get_date(),
+            'time'              => $this->get_time(),
+        );
+    }
+
 }

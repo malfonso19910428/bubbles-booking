@@ -82,7 +82,7 @@ if (!isset($state) || !is_array($state)) {
         $summary = new Bubbles_Summary($state);
 
         // Incluir plantilla del resumen
-        $summary_tpl = BB_PLUGIN_DIR . 'templates/summary-sidebar.php';
+        $summary_tpl = BB_PLUGIN_DIR . 'templates/wizard/summary-sidebar.php';
 
         if (file_exists($summary_tpl)) {
             include $summary_tpl;

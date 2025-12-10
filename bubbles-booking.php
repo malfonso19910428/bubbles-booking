@@ -1,281 +1,328 @@
 <?php
+error_log('PLUGIN LOADED TEST: ' . __FILE__);
 /*
 Plugin Name: Bubbles Booking
 Description: Shortcodes y funciones para el proceso de booking de car detailing.
-Version: 1.0.5
+Version: 1.0.7
 Author: Mily
 */
 
-// Seguridad básica
-if (!defined('ABSPATH')) exit;
+// Seguridad básica: evitar acceso directo
+if ( ! defined( 'ABSPATH' ) ) exit;
 
-// ==============================
-// Constantes
-// ==============================
-define('BB_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('BB_PLUGIN_URL', plugin_dir_url(__FILE__));
-require_once BB_PLUGIN_DIR . 'includes/catalog/addons-catalog.php';
-// Core
-require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-bookings.php';
-require_once BB_PLUGIN_DIR . 'includes/core/class-bubbles-packages.php';
+// =====================================
+// 1) Constantes de ruta y URL del plugin
+// =====================================
+define( 'BB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
+define( 'BB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
-// ==============================
-// Encolar JS y CSS (picker + wizard)
-// ==============================
-add_action('wp_enqueue_scripts', function () {
-    // --- JS ---
-    $picker_js = BB_PLUGIN_DIR . 'assets/js/bb-picker.js';
-    $wizard_js = BB_PLUGIN_DIR . 'assets/js/bb-wizard.js';
+// =====================================
+// 2) Includes de core (roles, assets) + INSTALLER
+// =====================================
 
-    // Picker (requerido)
-    wp_enqueue_script(
-        'bb-picker',
-        BB_PLUGIN_URL . 'assets/js/bb-picker.js',
-        array(), // dependencias (ej: ['jquery'] si lo necesitas)
-        file_exists($picker_js) ? filemtime($picker_js) : '1.0.0',
-        true // footer
+// Roles del plugin (bb_staff) – opcional, pero lo dejamos cargado
+$bb_roles_file = BB_PLUGIN_DIR . 'includes/core/class-bubbles-roles.php';
+if ( file_exists( $bb_roles_file ) ) {
+    require_once $bb_roles_file;
+}
+
+$bb_media_permissions_file = BB_PLUGIN_DIR . 'includes/core/bb-media-permissions.php';
+if ( file_exists( $bb_media_permissions_file ) ) {
+    require_once $bb_media_permissions_file;
+}
+
+// Gestor centralizado de CSS/JS
+require_once BB_PLUGIN_DIR . 'includes/core/class-bb-assets.php';
+BB_Assets::init();
+
+// Instalador del plugin (roles + tablas, etc.)
+require_once BB_PLUGIN_DIR . 'includes/config/Installer.php';
+
+// =====================================
+// 3) Módulo técnico (staff dashboard)
+// =====================================
+
+$bb_tech_module_file = BB_PLUGIN_DIR . 'includes/UI/tech/class-bb-tech-module.php';
+if ( file_exists( $bb_tech_module_file ) ) {
+    require_once $bb_tech_module_file;
+} else {
+    error_log( 'Bubbles Booking: ❌ No se encontró ' . $bb_tech_module_file );
+}
+
+// (Opcional) clase de disponibilidad técnica antigua, si la tienes separada
+$bb_tech_availability_file = BB_PLUGIN_DIR . 'includes/UI/tech/class-bubbles-tech-availability.php';
+if ( file_exists( $bb_tech_availability_file ) ) {
+    require_once $bb_tech_availability_file;
+}
+
+// =====================================
+// 4) Hooks de activación / carga inicial
+// =====================================
+
+// Hook de activación: delega en el instalador
+register_activation_hook(
+    __FILE__,
+    array( 'Bubbles_Installer', 'activate' )
+);
+
+// Instanciar módulos cuando los plugins estén cargados
+add_action( 'plugins_loaded', function () {
+
+    // Nuevo módulo técnico (maneja [bb_staff_dashboard])
+    if ( class_exists( 'BB_Tech_Module' ) ) {
+        new BB_Tech_Module();
+    } else {
+        error_log( 'Bubbles Booking: ❌ BB_Tech_Module no existe después de cargar el archivo.' );
+    }
+
+    // Disponibilidad técnica (clase vieja, si aún la usas)
+    if ( class_exists( 'Bubbles_Tech_Availability' ) ) {
+        new Bubbles_Tech_Availability();
+    }
+    // OJO: ya NO instanciamos Bubbles_Tech_Dashboard, eso lo hace BB_Tech_Module con el shortcode
+} );
+
+// =====================================
+// 5) Silenciar post type legacy de WooCommerce (shop_order_placehold)
+//    Evita notices de "post type not registered" en map_meta_cap
+// =====================================
+
+add_action( 'init', function () {
+    if ( post_type_exists( 'shop_order_placehold' ) ) {
+        return;
+    }
+
+    register_post_type(
+        'shop_order_placehold',
+        array(
+            'labels' => array(
+                'name'          => 'Legacy Orders',
+                'singular_name' => 'Legacy Order',
+            ),
+            'public'              => false,
+            'show_ui'             => false,
+            'show_in_menu'        => false,
+            'exclude_from_search' => true,
+            'publicly_queryable'  => false,
+            'has_archive'         => false,
+            'rewrite'             => false,
+            'query_var'           => false,
+            'map_meta_cap'        => true,
+        )
     );
+}, 0 );
 
-    // Wizard helper (opcional)
-    if (file_exists($wizard_js)) {
-        wp_enqueue_script(
-            'bb-wizard',
-            BB_PLUGIN_URL . 'assets/js/bb-wizard.js',
-            array('bb-picker'),
-            file_exists($wizard_js) ? filemtime($wizard_js) : '1.0.0',
-            true
-        );
-    }
+// =====================================
+// 6) Includes de catálogo y core (Wizard)
+// =====================================
 
-    // --- CSS ---
-    $wizard_css = BB_PLUGIN_DIR . 'assets/css/bb-wizard.css';
-    $picker_css = BB_PLUGIN_DIR . 'assets/css/bb-picker.css';
+// Catálogo de add-ons (ya movido a domain/catalog)
+$addons_catalog = BB_PLUGIN_DIR . 'includes/domain/catalog/addons-catalog.php';
+if ( file_exists( $addons_catalog ) ) {
+    require_once $addons_catalog;
+} else {
+    error_log( 'Bubbles Booking: ❌ Falta includes/domain/catalog/addons-catalog.php' );
+}
 
-    if (file_exists($wizard_css)) {
-        wp_enqueue_style(
-            'bb-wizard',
-            BB_PLUGIN_URL . 'assets/css/bb-wizard.css',
-            array(),
-            filemtime($wizard_css)
-        );
-    }
+// Core: reservas y paquetes
+$bookings_file = BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-bookings.php';
+if ( file_exists( $bookings_file ) ) {
+    require_once $bookings_file;
+}
 
-    if (file_exists($picker_css)) {
-        wp_enqueue_style(
-            'bb-picker-css',
-            BB_PLUGIN_URL . 'assets/css/bb-picker.css',
-            array('bb-wizard'),
-            filemtime($picker_css)
-        );
-    }
-}, 5);
+$packages_file = BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-packages.php';
+if ( file_exists( $packages_file ) ) {
+    require_once $packages_file;
+}
 
-// ==============================
-// INCLUDES PRINCIPALES
-// ==============================
+// Core: controlador de confirmación y pagos (Stripe + booking)
+$confirm_checkout = BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-confirm-checkout.php';
+if ( file_exists( $confirm_checkout ) ) {
+    require_once $confirm_checkout;
+}
 
-// Wizard principal (flujo booking)
-$wizard_inc = BB_PLUGIN_DIR . 'includes/bubbles-wizard.php';
-if (file_exists($wizard_inc)) {
+// =====================================
+// 7) Includes principales del plugin (Wizard, precios, vehículos)
+// =====================================
+
+// Wizard principal (flujo de booking)
+$wizard_inc = BB_PLUGIN_DIR . 'includes/UI/Wizard/bubbles-wizard.php';
+if ( file_exists( $wizard_inc ) ) {
     require_once $wizard_inc;
 }
 
-// Selector de vehículos (Vehicle Picker)
-$picker_inc = BB_PLUGIN_DIR . 'includes/bubbles_vehicle_picker.php';
-if (file_exists($picker_inc)) {
-    require_once $picker_inc;
-}
-
 // Módulo de precios (para el botón "See my price")
-$pricing_inc = BB_PLUGIN_DIR . 'includes/bubbles-custom-price.php';
-if (file_exists($pricing_inc)) {
+$pricing_inc = BB_PLUGIN_DIR . 'includes/UI/Wizard/bubbles-custom-price.php';
+if ( file_exists( $pricing_inc ) ) {
     require_once $pricing_inc;
 } else {
-    add_action('admin_notices', function () {
-        echo '<div class="notice notice-error"><p><strong>Bubbles Booking:</strong> Falta <code>includes/bubbles-custom-price.php</code>.</p></div>';
-    });
+    // Aviso en el admin si falta el módulo de precios
+    add_action( 'admin_notices', function () {
+        echo '<div class="notice notice-error"><p><strong>Bubbles Booking:</strong> Falta <code>includes/UI/Wizard/bubbles-custom-price.php</code>.</p></div>';
+    } );
 }
 
 // (Opcional) CPT + helpers si quieres guardar/listar/borrar vehículos.
-$vehicles_cpt = BB_PLUGIN_DIR . 'includes/bubbles-vehicles-cpt.php';
-if (file_exists($vehicles_cpt)) {
+$vehicles_cpt = BB_PLUGIN_DIR . 'includes/UI/Wizard/bubbles-vehicles-cpt.php';
+if ( file_exists( $vehicles_cpt ) ) {
     require_once $vehicles_cpt;
 }
 
-// ==============================
-// LOG DE DEPURACIÓN (opcional)
-// ==============================
-add_action('init', function () {
-    if (!function_exists('bb_custom_price_quote')) {
-        error_log('Bubbles Booking: ⚠️ bb_custom_price_quote() NO está cargada.');
+// =====================================
+// 8) Log de depuración (opcional)
+// =====================================
+
+add_action( 'init', function () {
+    if ( ! function_exists( 'bb_custom_price_quote' ) ) {
+        error_log( 'Bubbles Booking: ⚠️ bb_custom_price_quote() NO está cargada.' );
     } else {
-        error_log('Bubbles Booking: ✅ bb_custom_price_quote() cargada correctamente.');
+        error_log( 'Bubbles Booking: ✅ bb_custom_price_quote() cargada correctamente.' );
     }
-});
+} );
 
-// ==============================
-// Shortcode [bubbles_wizard] – asegurarlo SIEMPRE
-// ==============================
-add_action('init', function () {
+// =====================================
+// 9) Shortcode [bubbles_wizard] – asegurar que exista
+// =====================================
 
-    // Si ya existe (por ejemplo, registrado dentro de Bubbles_Wizard), no hacemos nada
-    if (shortcode_exists('bubbles_wizard')) {
+add_action( 'init', function () {
+
+    // Si el shortcode ya existe (registrado dentro de Bubbles_Wizard), no hacemos nada
+    if ( shortcode_exists( 'bubbles_wizard' ) ) {
         return;
     }
 
     // Si existe la clase Bubbles_Wizard, la instanciamos
-    if (class_exists('Bubbles_Wizard')) {
-        // Muchas veces el constructor ya hace add_shortcode(...)
+    if ( class_exists( 'Bubbles_Wizard' ) ) {
         $GLOBALS['bubbles_wizard_instance'] = new Bubbles_Wizard();
-        if (shortcode_exists('bubbles_wizard')) {
+        if ( shortcode_exists( 'bubbles_wizard' ) ) {
             return;
         }
     }
 
     // Si hay una función específica para el shortcode, la usamos
-    if (function_exists('bubbles_wizard_shortcode')) {
-        add_shortcode('bubbles_wizard', 'bubbles_wizard_shortcode');
+    if ( function_exists( 'bubbles_wizard_shortcode' ) ) {
+        add_shortcode( 'bubbles_wizard', 'bubbles_wizard_shortcode' );
         return;
     }
 
-    // Fallback: al menos mostrar algo y no dejar el texto plano
-    add_shortcode('bubbles_wizard', function () {
+    // Fallback: mensaje de error amigable
+    add_shortcode( 'bubbles_wizard', function () {
         return '<div style="border:1px solid #f87171;padding:12px;border-radius:8px;background:#fef2f2;color:#7f1d1d;">
             <strong>Bubbles Booking:</strong> El shortcode <code>[bubbles_wizard]</code> está activo, 
-            pero no se encontró la implementación del wizard. Revisa <code>includes/bubbles-wizard.php</code>.
+            pero no se encontró la implementación del wizard. Revisa <code>includes/UI/Wizard/bubbles-wizard.php</code>.
         </div>';
-    });
-});
+    } );
+} );
 
-// ==============================
-// Admin menu: Bubbles Booking → Settings (Google Maps API Key)
-// ==============================
-add_action('admin_menu', 'bubbles_booking_register_settings_page');
+// =====================================
+// 10) Admin module (menús Bubbles Booking)
+// =====================================
 
-function bubbles_booking_register_settings_page() {
-    add_menu_page(
-        'Bubbles Booking Settings',               // Título de la página
-        'Bubbles Booking',                        // Texto del menú
-        'manage_options',                         // Capacidad necesaria
-        'bubbles-booking-settings',               // slug único
-        'bubbles_booking_render_settings_page',   // Función que pinta la página
-        'dashicons-calendar-alt',                 // Icono en el menú
-        56                                        // Posición aproximada
-    );
+if ( is_admin() ) {
+    $bb_admin_module_file = BB_PLUGIN_DIR . 'includes/UI/Admin/bb-admin-module.php';
+
+    if ( file_exists( $bb_admin_module_file ) ) {
+        require_once $bb_admin_module_file;
+
+        if ( class_exists( 'BB_Admin_Module' ) ) {
+            new BB_Admin_Module();
+        } else {
+            error_log( 'Bubbles Booking: ❌ BB_Admin_Module no existe después de incluir bb-admin-module.php.' );
+        }
+    } else {
+        error_log( 'Bubbles Booking: ❌ No se encontró ' . $bb_admin_module_file );
+    }
 }
 
-function bubbles_booking_render_settings_page() {
-    if (!current_user_can('manage_options')) {
-        return;
-    }
+// =====================================
+// 11) Helper de opciones (Stripe) – usado por AJAX
+// =====================================
 
-    $option_name = 'bubbles_booking_options';
-
-    // Cargar opciones actuales (o por defecto)
-    $options = get_option($option_name, array(
+/**
+ * Devuelve las opciones globales para Stripe (legacy).
+ *
+ * ⚠️ Actualmente se usa SOLO por bb_create_payment_intent().
+ *    Los settings de Google Maps ya se manejan con BB_Settings_Map_Repo / Service.
+ */
+function bubbles_booking_get_options() {
+    $option_name     = 'bubbles_booking_options';
+    $default_options = array(
         'google_maps_api_key' => '',
-    ));
+        'stripe_secret_key'   => '',
+        'stripe_public_key'   => '',
+    );
 
-    // Si enviaron el formulario
-    if (isset($_POST['bubbles_booking_save_settings'])) {
-        check_admin_referer('bubbles_booking_save_settings');
-
-        $new_api_key = isset($_POST['google_maps_api_key'])
-            ? sanitize_text_field($_POST['google_maps_api_key'])
-            : '';
-
-        $options['google_maps_api_key'] = $new_api_key;
-
-        update_option($option_name, $options);
-
-        echo '<div class="notice notice-success is-dismissible"><p>Settings saved.</p></div>';
+    $options = get_option( $option_name, array() );
+    if ( ! is_array( $options ) ) {
+        $options = array();
     }
 
-    $current_api_key = isset($options['google_maps_api_key']) ? $options['google_maps_api_key'] : '';
-    ?>
-    <div class="wrap">
-        <h1>Bubbles Booking – Settings</h1>
-        <p>Configure here the global settings for the Bubbles Booking plugin.</p>
+    $options = wp_parse_args( $options, $default_options );
 
-        <form method="post" action="">
-            <?php wp_nonce_field('bubbles_booking_save_settings'); ?>
-
-            <table class="form-table" role="presentation">
-                <tbody>
-                    <tr>
-                        <th scope="row">
-                            <label for="google_maps_api_key">Google Maps API Key</label>
-                        </th>
-                        <td>
-                            <input type="text"
-                                   name="google_maps_api_key"
-                                   id="google_maps_api_key"
-                                   value="<?php echo esc_attr($current_api_key); ?>"
-                                   class="regular-text"
-                                   style="width: 420px;">
-                            <p class="description">
-                                This key must have <strong>Maps JavaScript API</strong> and <strong>Places API</strong> enabled in your Google Cloud project.
-                            </p>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <p class="submit">
-                <button type="submit" name="bubbles_booking_save_settings" class="button button-primary">
-                    Save changes
-                </button>
-            </p>
-        </form>
-    </div>
-    <?php
+    return $options;
 }
 
-// ==============================
-// Frontend: Google Places + JS de autocomplete UNA sola vez
-// ==============================
-add_action('wp_enqueue_scripts', 'bubbles_booking_enqueue_address_assets');
+// =====================================
+// 12) AJAX: crear PaymentIntent de Stripe
+// =====================================
 
-function bubbles_booking_enqueue_address_assets() {
-    if (is_admin()) return;
+add_action( 'wp_ajax_bb_create_payment_intent', 'bb_create_payment_intent' );
+add_action( 'wp_ajax_nopriv_bb_create_payment_intent', 'bb_create_payment_intent' );
 
-    global $post;
-    if (!is_a($post, 'WP_Post')) return;
+function bb_create_payment_intent() {
 
-    // Solo si la página tiene el shortcode del wizard
-    if (strpos($post->post_content, '[bubbles_wizard') === false) {
-        return;
+    if ( ! function_exists( 'bubbles_booking_get_options' ) ) {
+        wp_send_json_error( array( 'message' => 'Plugin options not available.' ) );
     }
 
-    // Leer settings
-    $options = get_option('bubbles_booking_options', array());
-    $api_key = isset($options['google_maps_api_key']) ? trim($options['google_maps_api_key']) : '';
+    $options = bubbles_booking_get_options();
+    $secret  = isset( $options['stripe_secret_key'] ) ? trim( $secret = $options['stripe_secret_key'] ) : '';
 
-    // Permitir override por filter si algún día lo necesitas
-    $api_key = apply_filters('bubbles_google_maps_api_key', $api_key);
-
-    if (empty($api_key)) {
-        // Sin API key no cargamos Google
-        return;
+    if ( empty( $secret ) ) {
+        wp_send_json_error( array( 'message' => 'Stripe secret key is missing.' ) );
     }
 
-    // Script de Google Places
-    wp_enqueue_script(
-        'bubbles-google-places',
-        'https://maps.googleapis.com/maps/api/js?key=' . rawurlencode($api_key) . '&libraries=places',
-        array(),
-        null,
-        true
+    $amount   = isset( $_POST['amount'] ) ? floatval( $_POST['amount'] ) : 0;
+    $currency = isset( $_POST['currency'] ) ? sanitize_text_field( $_POST['currency'] ) : 'usd';
+
+    if ( $amount <= 0 ) {
+        wp_send_json_error( array( 'message' => 'Invalid amount.' ) );
+    }
+
+    $amount_cents = (int) round( $amount * 100 );
+
+    $body = array(
+        'amount'                         => $amount_cents,
+        'currency'                       => $currency,
+        'automatic_payment_methods[enabled]' => 'true',
     );
 
-    // Script propio para conectar el autocomplete con el input
-    $js_url = BB_PLUGIN_URL . 'assets/js/bb-address-autocomplete.js';
-
-    wp_enqueue_script(
-        'bubbles-address-autocomplete',
-        $js_url,
-        array('bubbles-google-places'),
-        '1.0',
-        true
+    $response = wp_remote_post(
+        'https://api.stripe.com/v1/payment_intents',
+        array(
+            'timeout' => 60,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $secret,
+            ),
+            'body'    => $body,
+        )
     );
+
+    if ( is_wp_error( $response ) ) {
+        wp_send_json_error( array( 'message' => $response->get_error_message() ) );
+    }
+
+    $code = wp_remote_retrieve_response_code( $response );
+    $raw  = wp_remote_retrieve_body( $response );
+    $data = json_decode( $raw, true );
+
+    if ( $code !== 200 || ! is_array( $data ) || empty( $data['client_secret'] ) ) {
+        $error_message = isset( $data['error']['message'] ) ? $data['error']['message'] : 'Stripe API error.';
+        wp_send_json_error( array( 'message' => $error_message ) );
+    }
+
+    wp_send_json_success( array(
+        'client_secret'     => $data['client_secret'],
+        'payment_intent_id' => $data['id'],
+    ) );
 }

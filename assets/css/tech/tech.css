@@ -1,0 +1,254 @@
+/* ============================
+   Bubbles – Staff Dashboard
+   assets/css/tech/tech.css
+   ============================ */
+
+/* Reset pequeño solo para este bloque */
+.bb-tech-shell-wrapper * {
+    box-sizing: border-box;
+}
+
+/* Contenedor principal del dashboard */
+.bb-tech-shell-wrapper {
+    max-width: 1100px;
+    margin: 2.5rem auto 3.5rem;
+    padding: 24px 28px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow:
+        0 8px 16px rgba(15, 23, 42, 0.04),
+        0 0 0 1px rgba(148, 163, 184, 0.25);
+}
+
+/* Header */
+.bb-tech-header {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 12px;
+}
+
+.bb-tech-header h2 {
+    margin: 0 0 4px;
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: #111827;
+}
+
+.bb-tech-header p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #6b7280;
+}
+
+/* Layout: sidebar + contenido */
+.bb-tech-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+    margin-top: 18px;
+}
+
+/* Sidebar */
+.bb-tech-sidebar {
+    width: 230px;
+    flex-shrink: 0;
+}
+
+.bb-tech-menu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Cada item del menú */
+.bb-tech-menu li {
+    margin-bottom: 6px;
+}
+
+.bb-tech-menu a {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #111827;
+    background: #f9fafb;
+    border: 1px solid transparent;
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.1s ease;
+}
+
+.bb-tech-menu a:hover {
+    background: #eef2ff;
+    border-color: #6366f1;
+    transform: translateX(1px);
+}
+
+/* Item activo */
+.bb-tech-menu li.is-active a {
+    background: var(--ast-button-background-color, #00a37a); /* color del botón del tema */
+    color: var(--ast-button-color, #ffffff);                  /* texto del botón */
+    border-color: var(--ast-button-border-color, #008a66);    /* borde del tema */
+}
+
+/* Contenido principal (vista actual) */
+.bb-tech-content {
+    flex: 1;
+    min-height: 200px;
+}
+
+/* Tarjetas genéricas dentro del contenido */
+.bb-tech-card {
+    background: #f9fafb;
+    border-radius: 12px;
+    padding: 16px 18px;
+    border: 1px solid #e5e7eb;
+    font-size: 0.95rem;
+    color: #374151;
+}
+
+/* Mensaje de vista faltante */
+.bb-tech-card code {
+    background: #fee2e2;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+/* === Avatar perfil técnico === */
+.bb-tech-profile-avatar {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.bb-tech-profile-avatar img,
+.bb-profile-avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    background-color: #f3f4f6; /* fallback si no hay imagen */
+}
+
+/* Responsive: en móvil el menú pasa arriba */
+@media (max-width: 768px) {
+    .bb-tech-shell-wrapper {
+        padding: 18px 16px;
+        border-radius: 10px;
+    }
+
+    .bb-tech-layout {
+        flex-direction: column;
+    }
+
+    .bb-tech-sidebar {
+        width: 100%;
+    }
+
+    .bb-tech-menu a {
+        padding: 9px 10px;
+    }
+}
+/*especificamente para avilitability*/
+/* Contenedor general */
+.bb-staff-availability--frontend {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 2rem;
+}
+
+.bb-staff-availability__title {
+    margin: 0 0 0.35rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.bb-staff-availability__intro {
+    margin: 0 0 1.25rem;
+    font-size: 0.95rem;
+    opacity: 0.85;
+}
+
+.bb-staff-availability__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Lista de días */
+.bb-availability-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* Tarjeta de cada día */
+.bb-availability-item {
+    background: #ffffff;
+    border-radius: 0.75rem;
+    padding: 0.9rem 1rem 0.85rem;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+/* Filas dentro de la tarjeta */
+.bb-availability-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.bb-availability-row--top {
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.bb-availability-day {
+    font-weight: 600;
+}
+
+/* Checkbox "Available" */
+.bb-availability-available {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.bb-availability-available input[type="checkbox"] {
+    margin: 0;
+}
+
+/* Fila de horarios */
+.bb-availability-row--times {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.bb-availability-time {
+    flex: 1 1 140px;
+    min-width: 0;
+    max-width: 220px;
+}
+
+.bb-availability-time__label {
+    display: block;
+    font-size: 0.8rem;
+    opacity: 0.75;
+}
+/* para que se ver la pesrtana upload del selector de fotos siempre*/
+.media-modal .media-frame-router .media-router a {
+    opacity: 1 !important;
+    visibility: visible !important;
+    height: auto !important;
+    overflow: visible !important;
+}
+
+.media-modal .media-frame-router .media-router a.upload-files {
+    display: inline-block !important;
+}

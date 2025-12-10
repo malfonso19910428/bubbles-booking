@@ -152,14 +152,10 @@ class Bubbles_Vehicle_Picker {
         }
 
         // -------- Plantilla --------
-        $template = trailingslashit(BB_PLUGIN_DIR) . 'templates/wizard-step-vehicle.php';
-        if (!file_exists($template)) {
-            return '<div class="notice notice-error"><p><strong>Bubbles Booking:</strong> Missing template <code>templates/wizard-step-vehicle.php</code>.</p></div>';
-        }
+        $template = trailingslashit(BB_PLUGIN_DIR) . 'templates/wizard/wizard-step-vehicle.php';
+        
 
-        // Variables disponibles en la plantilla:
-        // $prev, $errors, $message, $saved_posts, $has_cpt,
-        // $bb_vehicles_json, $bb_package, $addons_current
+     
         ob_start();
         include $template;
         return ob_get_clean();
