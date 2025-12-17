@@ -1,99 +1,94 @@
 <?php
-if (!defined('ABSPATH')) exit;
+if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * Template: Wizard Step - Add-ons
+ * Template: Wizard – step "Add-ons"
  *
- * Variables esperadas:
- * - $wizard         -> instancia de Bubbles_Wizard
- * - $addons_catalog -> catálogo de add-ons (array)
- * - $prev_addons    -> array de slugs seleccionados previamente
- * - $selected_pkg   -> ID del paquete elegido en el paso anterior
+ * Variables disponibles desde wizard-shell.php:
+ *  - array $step_data
+ *      - $step_data['addons']           => catálogo de add-ons
+ *      - $step_data['selected_addons']  => array de IDs seleccionados
+ *      - $step_data['errors']           => array de mensajes de error (opcional)
  */
 
-$addons      = isset($addons_catalog) && is_array($addons_catalog) ? $addons_catalog : array();
-$prev_addons = isset($prev_addons) && is_array($prev_addons) ? $prev_addons : array();
-$selected_pkg = isset($selected_pkg) ? $selected_pkg : '';
+// Aseguramos que $step_data exista
+$step_data = isset( $step_data ) && is_array( $step_data ) ? $step_data : array();
+
+$addons          = isset( $step_data['addons'] ) ? (array) $step_data['addons'] : array();
+$selected_addons = isset( $step_data['selected_addons'] ) ? (array) $step_data['selected_addons'] : array();
+$errors          = isset( $step_data['errors'] ) ? (array) $step_data['errors'] : array();
 ?>
 
-<h3 class="bb-section-title">Step 3 · Add-ons</h3>
+<div class="bb-step bb-step-addons">
+    <p><?php esc_html_e( 'Choose any extra services you would like to add to your booking.', 'bubbles-booking' ); ?></p>
 
-<form method="post" class="bb-step-form" novalidate>
+    <?php if ( ! empty( $errors ) ) : ?>
+        <div class="bb-errors bb-errors-addons">
+            <?php foreach ( $errors as $msg ) : ?>
+                <p><?php echo esc_html( $msg ); ?></p>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
 
-    <?php
-    // Paso actual
-    echo $wizard->hidden('bb_step', 'addons');
+    <?php if ( empty( $addons ) ) : ?>
 
-    // Mantener datos de pasos anteriores
-    echo $wizard->hidden_vehicle_fields();
-    echo $wizard->hidden_addons_fields();   // por si vienes de atrás con algo seleccionado
-    echo $wizard->hidden_address_fields();
-    echo $wizard->hidden_date_fields();
-    echo $wizard->hidden_contact_fields();
+        <p><?php esc_html_e( 'No add-ons are available for this service at the moment.', 'bubbles-booking' ); ?></p>
 
-    // Mantener el paquete seleccionado
-    if (!empty($selected_pkg)) {
-        echo $wizard->hidden('bb_package', $selected_pkg);
-    }
-    ?>
+    <?php else : ?>
 
-    <div class="bb-addons-grid">
-        <?php foreach ($addons as $addon):
+        <div class="bb-addons-grid">
+            <?php foreach ( $addons as $addon ) :
 
-            $slug   = $addon['slug']  ?? '';
-            if ($slug === '') continue;
+                $id = isset( $addon['id'] ) ? (int) $addon['id'] : 0;
+                if ( $id <= 0 ) {
+                    continue;
+                }
 
-            $name   = $addon['name']  ?? $slug;
-            $desc   = $addon['desc']  ?? '';
-            $price  = $addon['price'] ?? '';
-            $badge  = $addon['badge'] ?? '';
+                $label = isset( $addon['label'] ) ? $addon['label'] : '';
+                $desc  = isset( $addon['description'] ) ? $addon['description'] : '';
+                $price = isset( $addon['price'] ) ? (float) $addon['price'] : 0.0;
 
-            $checked = in_array($slug, $prev_addons, true);
-        ?>
-            <label class="bb-addon-card<?php echo $checked ? ' is-selected' : ''; ?>">
-                <input type="checkbox"
-                       class="bb-addon-checkbox"
-                       name="addons[]"
-                       value="<?php echo esc_attr($slug); ?>"
-                       <?php checked($checked); ?>>
+                $is_selected = in_array( $id, $selected_addons, true );
+                ?>
+                <label class="bb-addon-item">
+                    <input
+                        type="checkbox"
+                        name="bb_addons[]"
+                        value="<?php echo esc_attr( $id ); ?>"
+                        <?php checked( $is_selected ); ?>
+                    />
+                    <span class="bb-addon-main">
+                        <span class="bb-addon-title">
+                            <?php echo esc_html( $label ); ?>
+                        </span>
 
-                <span class="bb-addon-title">
-                    <?php echo esc_html($name); ?>
-                    <?php if ($badge): ?>
-                        <span class="bb-addon-badge"><?php echo esc_html($badge); ?></span>
+                        <?php if ( $price > 0 ) : ?>
+                            <span class="bb-addon-price">
+                                <?php
+                                /* translators: %s = price */
+                                echo esc_html(
+                                    sprintf(
+                                        __( '$%s', 'bubbles-booking' ),
+                                        number_format_i18n( $price, 2 )
+                                    )
+                                );
+                                ?>
+                            </span>
+                        <?php endif; ?>
+                    </span>
+
+                    <?php if ( ! empty( $desc ) ) : ?>
+                        <span class="bb-addon-desc">
+                            <?php echo esc_html( $desc ); ?>
+                        </span>
                     <?php endif; ?>
-                </span>
+                </label>
+            <?php endforeach; ?>
+        </div>
 
-                <?php if ($price !== ''): ?>
-                    <span class="bb-addon-price">
-                        + $<?php echo esc_html(number_format((float) $price, 0)); ?>
-                    </span>
-                <?php endif; ?>
+    <?php endif; ?>
 
-                <?php if ($desc): ?>
-                    <span class="bb-addon-desc">
-                        <?php echo esc_html($desc); ?>
-                    </span>
-                <?php endif; ?>
-            </label>
-        <?php endforeach; ?>
-    </div>
+    <!-- Paso actual -->
+    <input type="hidden" name="bb_step" value="addons" />
 
-    <div class="bb-actions">
-        <button type="submit" name="bb_back" value="1" class="bb-btn bb-btn-secondary">
-            &laquo; Back
-        </button>
-        
-      <!-- BOTÓN ADD ANOTHER VEHICLE (ENVÍA EL FORMULARIO) -->
-    <button type="submit"
-            name="bb_add_vehicle"
-            value="1"
-            class="bb-btn bb-btn-tertiary">
-        + Add another vehicle
-    </button>
-        <button type="submit" name="bb_continue" value="1" class="bb-btn bb-btn-primary">
-            Continue
-        </button>
-    </div>
-
-</form>
+</div>

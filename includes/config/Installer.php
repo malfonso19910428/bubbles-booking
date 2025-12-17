@@ -14,28 +14,39 @@ class Bubbles_Installer {
         }
 
         // ==========================
-        // Tech Portfolio (fotos)
+        // Tech Portfolio (fotos) - (opcional / aún comentado)
         // ==========================
-       // require_once BB_PLUGIN_DIR . 'includes/domain/tech/portfolio/TechPortfolioRepo.php';
-       // if ( class_exists( 'TechPortfolioRepo' ) ) {
-       //     TechPortfolioRepo::create_table();
-       // }
+        /*
+        require_once BB_PLUGIN_DIR . 'includes/domain/tech/portfolio/TechPortfolioRepo.php';
+        if ( class_exists( 'TechPortfolioRepo' ) ) {
+            TechPortfolioRepo::create_table();
+        }
+        */
 
         // ==========================
         // Services catalog (bb_services)
         // ==========================
-           // ==========================
         require_once BB_PLUGIN_DIR . 'includes/domain/catalog/services/bb-services-repo.php';
-        BB_Services_Repo::create_table();
+        if ( class_exists( 'BB_Services_Repo' ) ) {
+            BB_Services_Repo::create_table();
+        }
 
         // ==========================
         // Add-ons catalog (bb_addons)
         // ==========================
         require_once BB_PLUGIN_DIR . 'includes/domain/catalog/addons/bb-addons-repo.php';
-
         if ( class_exists( 'BB_Addons_Repo' ) ) {
-            // El constructor de BB_Addons_Repo llama a maybe_create_table()
+            // Constructor crea tabla si hace falta
             new BB_Addons_Repo();
+        }
+
+        // ==========================
+        // Wizard Draft Steps (bb_booking_drafts)
+        // ==========================
+        require_once BB_PLUGIN_DIR . 'includes/domain/wizard/bb-draft-steps-repo.php';
+        if ( class_exists( 'BB_Draft_Steps_Repo' ) ) {
+            $repo = new BB_Draft_Steps_Repo();
+            $repo->create_table_if_needed();
+        }
     }
-}
 }

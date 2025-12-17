@@ -1,0 +1,21 @@
+.bb-vehicle-grid{
+  display:flex;
+  gap:24px;
+  align-items:flex-start;
+}
+
+.bb-vehicle-form-fields{
+  flex: 1 1 60%;
+  min-width: 320px;
+}
+
+.bb-vehicle-saved-list{
+  flex: 1 1 40%;
+  min-width: 260px;
+}
+
+@media (max-width: 900px){
+  .bb-vehicle-grid{
+    flex-direction:column;
+  }
+}

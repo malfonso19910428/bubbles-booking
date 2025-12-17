@@ -1,0 +1,20 @@
+/* Days disabled (past) */
+.bb-cal-day.is-disabled,
+.bb-cal-day.disabled,
+.bb-cal-day.is-disabled:hover {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+/* Empty cells */
+.bb-cal-empty { opacity: .2; }
+
+/* Selected day */
+.bb-cal-day.is-selected {
+  outline: 2px solid #111;
+}
+
+/* Optional: hover for clickable days only */
+button.bb-cal-day:hover {
+  filter: brightness(0.95);
+}

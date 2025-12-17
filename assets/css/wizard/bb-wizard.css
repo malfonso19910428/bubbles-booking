@@ -288,6 +288,48 @@
     cursor: default;
     box-shadow: none;
 }
+#bb-stripe-card-element {
+  min-height: 48px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 10px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+#bb-stripe-errors {
+  margin-top: 8px;
+}
+/* Stripe card container */
+#bb-stripe-card-element {
+  min-height: 48px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+/* Stripe iframe */
+#bb-stripe-card-element .StripeElement {
+  width: 100%;
+}
+#bb-stripe-card-element{
+  display:block !important;
+  min-height:44px !important;
+  padding:10px;
+  border:1px solid #ddd;
+  border-radius:4px;
+}
+
+/* Error message */
+#bb-stripe-errors {
+  margin-top: 8px;
+  color: #d63638;
+  font-size: 14px;
+}
 
 /* --- Layout en dos columnas para Date & Time --- */
 .bb-date-layout {

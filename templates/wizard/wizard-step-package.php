@@ -2,73 +2,88 @@
 /**
  * Template: Wizard Step - Package & price
  *
- * Variables disponibles:
- * - $wizard           -> instancia de Bubbles_Wizard
- * - $pricing_packages -> array desde bb_custom_price_quote()
- * - $meta_all         -> metadatos de Bubbles_Packages::get_all()
- * - $selected_pkg     -> ID del paquete seleccionado (string)
+ * Esta plantilla se usa dentro de wizard-shell.php
+ *
+ * Recibe:
+ *   - $step (array) con:
+ *       - pricing_packages
+ *       - meta_all
+ *       - selected_pkg
+ *
+ * La shell ya abre el <form> y pinta los botones Back / Continue.
+ * Aquí SOLO dibujamos los campos del paso.
  */
+
+if ( ! defined( 'ABSPATH' ) ) exit;
+
+// Tomamos los datos desde $step (vienen de BB_Services_Controller::get_view_data)
+$pricing_packages = isset( $step['pricing_packages'] ) ? (array) $step['pricing_packages'] : array();
+$meta_all         = isset( $step['meta_all'] )         ? (array) $step['meta_all']         : array();
+$selected_pkg     = isset( $step['selected_pkg'] )     ? (string) $step['selected_pkg']    : '';
+
+
 ?>
 
-<h3 class="bb-section-title">Step 2 · Package & price</h3>
 
-<form method="post" class="bb-step-form" novalidate>
 
-    <?php
-    // Hidden fields
-    echo $wizard->hidden('bb_step','package');
-    echo $wizard->hidden_vehicle_fields();
-    echo $wizard->hidden_addons_fields();
-    echo $wizard->hidden_address_fields();
-    echo $wizard->hidden_date_fields();
-    echo $wizard->hidden_contact_fields();
-    ?>
+<?php if ( empty( $pricing_packages ) ) : ?>
+
+    <p>No packages available at this moment.</p>
+
+<?php else : ?>
 
     <div class="bb-packages">
-        <?php foreach ($pricing_packages as $p): ?>
+        <?php foreach ( $pricing_packages as $p ) : ?>
             <?php
-            if (empty($p['id'])) continue;
+            if ( empty( $p['id'] ) ) {
+                continue;
+            }
 
-            $id    = $p['id'];
-            $price = isset($p['price']) ? (float) $p['price'] : 0;
-            $price_label = '$' . number_format_i18n($price, 2);
+            $id    = (string) $p['id'];
+            $price = isset( $p['price'] ) ? (float) $p['price'] : 0;
+            $price_label = '$' . number_format_i18n( $price, 2 );
 
-            $meta = isset($meta_all[$id]) ? $meta_all[$id] : array();
+            $meta = isset( $meta_all[ $id ] ) ? $meta_all[ $id ] : array();
 
-            $name        = $meta['name']           ?? ($p['label'] ?? $id);
+            $name        = $meta['name']           ?? ( $p['label'] ?? $id );
             $description = $meta['description']    ?? '';
             $duration    = $meta['duration_hours'] ?? 2;
             $icon        = $meta['icon']           ?? '';
             $class_det   = $p['class_detected']    ?? '';
 
-            $chk = checked($selected_pkg, $id, false);
+            $chk = checked( $selected_pkg, $id, false );
             ?>
             <label class="bb-card">
-                <input type="radio" name="bb_package" value="<?php echo esc_attr($id); ?>" <?php echo $chk; ?> required>
+                <input
+                    type="radio"
+                    name="bb_package"
+                    value="<?php echo esc_attr( $id ); ?>"
+                    <?php echo $chk; ?>
+                    required
+                />
 
                 <div class="bb-card-title">
-                    <strong><?php echo esc_html(trim($icon.' '.$name)); ?></strong>
-                    — <?php echo esc_html($price_label); ?>
+                    <strong><?php echo esc_html( trim( $icon . ' ' . $name ) ); ?></strong>
+                    — <?php echo esc_html( $price_label ); ?>
                 </div>
 
-                <?php if (!empty($class_det)): ?>
-                    <div class="bb-card-class">Class detected: <?php echo esc_html($class_det); ?></div>
+                <?php if ( ! empty( $class_det ) ) : ?>
+                    <div class="bb-card-class">
+                        Class detected: <?php echo esc_html( $class_det ); ?>
+                    </div>
                 <?php endif; ?>
 
-                <?php if (!empty($description)): ?>
-                    <div class="bb-card-desc"><?php echo esc_html($description); ?></div>
+                <?php if ( ! empty( $description ) ) : ?>
+                    <div class="bb-card-desc">
+                        <?php echo esc_html( $description ); ?>
+                    </div>
                 <?php endif; ?>
 
                 <div class="bb-card-duration">
-                    Duration: <?php echo esc_html($duration); ?> hours
+                    Duration: <?php echo esc_html( $duration ); ?> hours
                 </div>
             </label>
         <?php endforeach; ?>
     </div>
 
-    <div class="bb-actions">
-        <button type="submit" name="bb_back" value="1" class="button">Back</button>
-        <button type="submit" name="bb_continue" value="1" class="button button-primary">Continue</button>
-    </div>
-
-</form>
+<?php endif; ?>

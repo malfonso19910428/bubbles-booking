@@ -11,16 +11,38 @@ class BB_Addons_Service {
     }
 
     /**
-     * Devuelve todos los add-ons (para admin o wizard)
+     * Devuelve todos los add-ons (para admin)
      *
      * @return array
      */
-    public function get_all() {
+    public function get_all(): array {
         return $this->repo->get_all();
     }
 
     /**
-     * Crea un add-on desde datos del formulario
+     * Devuelve solo add-ons activos, pensados para el wizard/frontend.
+     *
+     * @return array
+     */
+    public function get_active_for_wizard(): array {
+        $all = $this->repo->get_all();
+
+        if ( empty( $all ) || ! is_array( $all ) ) {
+            return array();
+        }
+
+        return array_values(
+            array_filter(
+                $all,
+                function ( $row ) {
+                    return ! empty( $row['active'] );
+                }
+            )
+        );
+    }
+
+    /**
+     * Crea un add-on desde datos del formulario (admin).
      *
      * @param array $data
      * @return int|false

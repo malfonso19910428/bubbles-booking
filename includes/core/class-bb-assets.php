@@ -166,7 +166,31 @@ class BB_Assets {
             }
         }
 
-        
+        // =========================
+        //  TECH DASHBOARD (bb_staff_dashboard)
+        // =========================
+        if ( $has_tech ) {
+            if ( file_exists( $tech_css ) ) {
+                wp_enqueue_style(
+                    'bb-tech-dashboard',
+                    BB_PLUGIN_URL . 'assets/css/tech/tech.css',
+                    array(),
+                    filemtime( $tech_css )
+                );
+            }
+
+            // Si luego tienes JS para el dashboard:
+            $tech_js = BB_PLUGIN_DIR . 'assets/js/tech-dashboard.js';
+            if ( file_exists( $tech_js ) ) {
+                wp_enqueue_script(
+                    'bb-tech-dashboard',
+                    BB_PLUGIN_URL . 'assets/js/tech-dashboard.js',
+                    array( 'jquery' ),
+                    filemtime( $tech_js ),
+                    true
+                );
+            }
+        }
     }
 
     public static function enqueue_admin( $hook ) {
