@@ -8,9 +8,26 @@ Author: Mily
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+add_action('rest_api_init', function () {
+  register_rest_route('bb/v1', '/ping', array(
+    'methods'  => 'GET',
+    'callback' => function () { return array('ok' => true, 'ping' => 'pong'); },
+    'permission_callback' => '__return_true',
+  ));
+});
+
+
 // Constantes
 define( 'BB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+
+
+add_action('plugins_loaded', function () {
+  require_once BB_PLUGIN_DIR . 'includes/rest/bb-rest-bootstrap.php';
+  BB_Rest_Bootstrap::init();
+});
+
+
 require_once BB_PLUGIN_DIR . 'includes/integrations/helpers.php';
 require_once BB_PLUGIN_DIR . 'includes/integrations/stripe/stripe-ajax.php';
 

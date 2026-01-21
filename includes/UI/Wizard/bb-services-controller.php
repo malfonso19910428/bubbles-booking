@@ -220,14 +220,7 @@ if ( is_array($prices_by_service_id) ) {
             if ( $legacy_price !== null && (int) $job_target_id <= 0 ) {
                 $final_price = $legacy_price;
             }
-error_log('[BB_PACKAGE] svc priced = ' . wp_json_encode(array(
-  'service_id'   => $service_id,
-  'base_price'   => $base_price,
-  'final_price'  => $final_price,
-  'job_target_id'=> $job_target_id,
-  'vehicle_type' => $vehicle_type,
-  'engine_hit'   => ( $job_target_id > 0 && isset($prices_by_service_id[$service_id]) ) ? 1 : 0,
-)));
+
 
             $pricing_packages[] = array(
                 'id'             => $id,

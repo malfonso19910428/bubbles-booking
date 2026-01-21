@@ -101,5 +101,16 @@ class BB_Pricing_Tiers_Service {
         }
         return array();
     }
+        public function get_default_add_by_id( int $tier_id ): float {
+        if ( $tier_id <= 0 ) return 0.0;
+        $val = (float) $this->repo->get_default_add_by_id( $tier_id );
+        if ( $val < 0 ) $val = 0;
+        return (float) round($val, 2);
+    }
+
+    public function get_default_add_map(): array {
+        return $this->repo->get_default_add_map();
+    }
+
 
 }

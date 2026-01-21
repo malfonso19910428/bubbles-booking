@@ -40,7 +40,7 @@ class BB_Admin_Catalog_Shell {
         // ✅ Agregamos job_targets
         $allowed_tabs = array( 'services', 'addons', 'pricing', 'job_targets' );
         $current_tab  = in_array( $tab, $allowed_tabs, true ) ? $tab : 'services';
-
+        
 
         // 2️⃣ Procesar POST (solo si aplica)
         $method = isset($_SERVER['REQUEST_METHOD'])
