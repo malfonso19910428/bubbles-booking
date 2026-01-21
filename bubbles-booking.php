@@ -57,11 +57,6 @@ if ( file_exists( $wizard_inc ) ) {
     }
 }
 
-// ===== Pricing module (See my price) =====
-$pricing_inc = BB_PLUGIN_DIR . 'includes/UI/Wizard/bubbles-custom-price.php';
-if ( file_exists( $pricing_inc ) ) {
-    require_once $pricing_inc;
-}
 
 // ===== Admin module =====
 if ( is_admin() ) {

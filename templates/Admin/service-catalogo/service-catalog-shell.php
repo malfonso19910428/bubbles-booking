@@ -5,11 +5,13 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  * Template: Catalog Shell
  *
  * Variables:
- *  - string $bb_current_tab        ('services' | 'addons')
+ *  - string $bb_current_tab        ('services' | 'addons' | 'pricing' | 'job_targets')
  *  - array  $bb_services_list
  *  - array  $bb_addons_list
  *  - bool   $bb_service_created
  *  - bool   $bb_addon_created
+ *  - array  $bb_pricing_view       (data real de pricing)
+ *  - array  $bb_job_targets_view   (data de job targets)
  */
 ?>
 <div class="wrap">
@@ -29,7 +31,8 @@ if ( ! defined( 'ABSPATH' ) ) exit;
     <?php endif; ?>
 
     <?php
-    $base_url = remove_query_arg( array( 'bb_tab' ) );
+    // ✅ Base URL FIJO para tabs (evita perder page=bb-catalog y volver a Services)
+    $base_url = admin_url( 'admin.php?page=bb-catalog' );
     ?>
 
     <h2 class="nav-tab-wrapper">
@@ -42,16 +45,50 @@ if ( ! defined( 'ABSPATH' ) ) exit;
            class="nav-tab <?php echo ( $bb_current_tab === 'addons' ) ? 'nav-tab-active' : ''; ?>">
             Add-ons
         </a>
+
+        <a href="<?php echo esc_url( add_query_arg( 'bb_tab', 'job_targets', $base_url ) ); ?>"
+           class="nav-tab <?php echo ( $bb_current_tab === 'job_targets' ) ? 'nav-tab-active' : ''; ?>">
+            Job Targets
+        </a>
+
+        <a href="<?php echo esc_url( add_query_arg( 'bb_tab', 'pricing', $base_url ) ); ?>"
+           class="nav-tab <?php echo ( $bb_current_tab === 'pricing' ) ? 'nav-tab-active' : ''; ?>">
+            Pricing
+        </a>
     </h2>
 
     <?php
     // Incluir la vista específica de la tab
     if ( $bb_current_tab === 'services' ) {
+
         $bb_services_list_local = $bb_services_list;
         include BB_PLUGIN_DIR . 'templates/Admin/service-catalogo/services.php';
-    } else {
+
+    } elseif ( $bb_current_tab === 'addons' ) {
+
         $bb_addons_list_local = $bb_addons_list;
         include BB_PLUGIN_DIR . 'templates/Admin/service-catalogo/addons.php';
+
+    } elseif ( $bb_current_tab === 'job_targets' ) {
+
+        // ✅ Job Targets: la vista usa $view (view model)
+        $view = ( isset( $bb_job_targets_view ) && is_array( $bb_job_targets_view ) )
+            ? $bb_job_targets_view
+            : array();
+
+        include BB_PLUGIN_DIR . 'templates/Admin/service-catalogo/job-targets.php';
+
+    } else {
+
+        // Pricing: data real de pricing
+        $bb_pricing_view_local = ( isset( $bb_pricing_view ) && is_array( $bb_pricing_view ) )
+            ? $bb_pricing_view
+            : array();
+
+        // ✅ Si tu pricing.php espera $bb_pricing_view
+        $bb_pricing_view = $bb_pricing_view_local;
+
+        include BB_PLUGIN_DIR . 'templates/Admin/service-catalogo/pricing.php';
     }
     ?>
 </div>

@@ -1,281 +1,218 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-/**
- * Módulo técnico:
- * - Registra el shortcode [bb_staff_dashboard]
- * - Verifica login y rol (bb_staff o administrator)
- * - Instancia dominio (Repo + Service) para availability
- * - Instancia dominio (Repo + Service) para profile
- * - Instancia dominio (Repo + Service) para portfolio (fotos técnico)
- * - Instancia la shell/layout del dashboard
- * - Encola CSS/JS del módulo técnico
- */
-class BB_Tech_Module {
+final class BB_Tech_Module {
 
-    /** @var BB_Tech_Shell|null */
-    protected $shell = null;
+    /** @var BB_Tech_Shell */
+    protected $shell;
 
-    /** @var TechAvailabilityService|null */
-    protected $availability_service = null;
+    /** @var TechAvailabilityService */
+    protected $availability_service;
 
-    /** @var TechProfileService|null */
-    protected $profile_service = null;
+    /** @var TechProfileService */
+    protected $profile_service;
 
-    /** @var TechPortfolioService|null */
-    protected $portfolio_service = null;
+    /** @var BB_Tech_Profile_Controller */
+    protected $profile_controller;
+
+    private static bool $assets_enqueued = false;
 
     public function __construct() {
-        error_log( 'Bubbles Booking: ✅ BB_Tech_Module constructor ejecutado.' );
-
-        // 1) Incluir clases necesarias
         $this->includes();
+        $this->init_services_and_shell();
 
-        // 2) Instanciar clases internas (dominio + shell)
-        $this->init_classes();
-
-        // 3) Shortcode del dashboard técnico
         add_shortcode( 'bb_staff_dashboard', array( $this, 'render_staff_dashboard' ) );
 
-        // 4) Restringir Media Library para técnicos (solo sus propias imágenes)
         add_filter(
             'ajax_query_attachments_args',
             array( $this, 'restrict_media_library_for_techs' )
         );
     }
 
-    /**
-     * Incluir clases del módulo técnico
-     */
-    private function includes() {
+    private function includes(): void {
 
-        // ==========================================
-        // 1) Shell/layout
-        // ==========================================
-        $shell_file = BB_PLUGIN_DIR . 'includes/UI/tech/class-bb-tech-shell.php';
-        if ( file_exists( $shell_file ) ) {
-            require_once $shell_file;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró el shell del técnico en ' . $shell_file );
-        }
+        require_once BB_PLUGIN_DIR . 'includes/domain/tech/availability/TechAvailabilityRepo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/tech/availability/TechAvailabilityService.php';
 
-        // ==========================================
-        // 2) Dominio: disponibilidad del técnico
-        // ==========================================
-        $repo_file_avail    = BB_PLUGIN_DIR . 'includes/domain/tech/availability/TechAvailabilityRepo.php';
-        $service_file_avail = BB_PLUGIN_DIR . 'includes/domain/tech/availability/TechAvailabilityService.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/tech/profile/TechProfileRepo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/tech/profile/TechProfileService.php';
 
-        if ( file_exists( $repo_file_avail ) ) {
-            require_once $repo_file_avail;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró TechAvailabilityRepo en ' . $repo_file_avail );
-        }
-
-        if ( file_exists( $service_file_avail ) ) {
-            require_once $service_file_avail;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró TechAvailabilityService en ' . $service_file_avail );
-        }
-
-        // ==========================================
-        // 3) Dominio: perfil del técnico
-        // ==========================================
-        $repo_file_profile    = BB_PLUGIN_DIR . 'includes/domain/tech/profile/TechProfileRepo.php';
-        $service_file_profile = BB_PLUGIN_DIR . 'includes/domain/tech/profile/TechProfileService.php';
-
-        if ( file_exists( $repo_file_profile ) ) {
-            require_once $repo_file_profile;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró TechProfileRepo en ' . $repo_file_profile );
-        }
-
-        if ( file_exists( $service_file_profile ) ) {
-            require_once $service_file_profile;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró TechProfileService en ' . $service_file_profile );
-        }
-
-        // ==========================================
-        // 4) Dominio: portfolio del técnico (fotos)
-        // ==========================================
-        $repo_file_portfolio    = BB_PLUGIN_DIR . 'includes/domain/tech/portfolio/TechPortfolioRepo.php';
-        $service_file_portfolio = BB_PLUGIN_DIR . 'includes/domain/tech/portfolio/TechPortfolioService.php';
-
-        if ( file_exists( $repo_file_portfolio ) ) {
-            require_once $repo_file_portfolio;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró TechPortfolioRepo en ' . $repo_file_portfolio );
-        }
-
-        if ( file_exists( $service_file_portfolio ) ) {
-            require_once $service_file_portfolio;
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se encontró TechPortfolioService en ' . $service_file_portfolio );
-        }
-
-        // 👇 Ya no incluimos Bubbles_Tech_Availability legacy.
+        require_once BB_PLUGIN_DIR . 'includes/UI/tech/class-bb-tech-profile.php';
+        require_once BB_PLUGIN_DIR . 'includes/UI/tech/class-bb-tech-shell.php';
     }
 
-    /**
-     * Instanciar clases internas
-     */
-    private function init_classes() {
+    private function init_services_and_shell(): void {
 
-        // ===========================
-        // 1) Dominio: disponibilidad
-        // ===========================
-        if ( class_exists( 'TechAvailabilityRepo' ) && class_exists( 'TechAvailabilityService' ) ) {
+        $this->availability_service = new TechAvailabilityService(
+            new TechAvailabilityRepo()
+        );
 
-            $repo = new TechAvailabilityRepo();
+        $this->profile_service = new TechProfileService(
+            new TechProfileRepo()
+        );
 
-            // El Service maneja el POST (handle_form en init)
-            $this->availability_service = new TechAvailabilityService( $repo );
-
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se pudieron cargar TechAvailabilityRepo / TechAvailabilityService.' );
+        if ( class_exists( 'BB_Tech_Profile_Controller' ) ) {
+            $this->profile_controller = new BB_Tech_Profile_Controller( $this->profile_service );
+            $this->profile_controller->register_hooks();
         }
 
-        // ===========================
-        // 2) Dominio: perfil
-        // ===========================
-        if ( class_exists( 'TechProfileRepo' ) && class_exists( 'TechProfileService' ) ) {
-
-            $profile_repo          = new TechProfileRepo();
-            $this->profile_service = new TechProfileService( $profile_repo );
-
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se pudieron cargar TechProfileRepo / TechProfileService.' );
-        }
-
-        // ===========================
-        // 3) Dominio: portfolio (fotos técnico)
-        // ===========================
-        if ( class_exists( 'TechPortfolioRepo' ) && class_exists( 'TechPortfolioService' ) ) {
-
-            $portfolio_repo          = new TechPortfolioRepo();
-            $this->portfolio_service = new TechPortfolioService( $portfolio_repo );
-
-        } else {
-            error_log( 'Bubbles Booking: ❌ No se pudieron cargar TechPortfolioRepo / TechPortfolioService.' );
-        }
-
-        // ===========================
-        // 4) Shell/layout principal
-        // ===========================
-      // ===========================
-
-
-// (Opcional) pequeño log para ver qué hay
-error_log(
-    'BB_Tech_Module DEBUG: '
-    . 'shell_class=' . ( class_exists( 'BB_Tech_Shell' ) ? 'yes' : 'no' )
-    . ' | availability=' . ( $this->availability_service instanceof TechAvailabilityService ? 'yes' : 'no' )
-    . ' | profile=' . ( $this->profile_service instanceof TechProfileService ? 'yes' : 'no' )
-    . ' | portfolio=' . ( $this->portfolio_service instanceof TechPortfolioService ? 'yes' : 'no' )
-);
-
-if (
-    class_exists( 'BB_Tech_Shell' )
-    && $this->availability_service instanceof TechAvailabilityService
-    && $this->profile_service      instanceof TechProfileService
-    // 👈 ya NO exigimos que $this->portfolio_service sea instancia
-) {
-    $this->shell = new BB_Tech_Shell(
-        $this->availability_service,
-        $this->profile_service,
-        $this->portfolio_service // puede venir null
-    );
-} else {
-    error_log( 'Bubbles Booking: ❌ No se pudo instanciar BB_Tech_Shell (faltan servicios o clase).' );
-}
-
+        $this->shell = new BB_Tech_Shell(
+            $this->availability_service,
+            $this->profile_service
+        );
     }
 
-    /**
-     * Shortcode [bb_staff_dashboard]
-     */
-    public function render_staff_dashboard( $atts = array(), $content = '' ) {
+    private function ensure_assets_enqueued(): void {
 
-        // Necesario para usar wp.media (Media Library) en el frontend
+        if ( self::$assets_enqueued ) return;
+        self::$assets_enqueued = true;
+
+        // ✅ IMPORTANT: media stack BEFORE your avatar JS uses wp.media
         if ( function_exists( 'wp_enqueue_media' ) ) {
             wp_enqueue_media();
         }
 
-        // Encolamos CSS/JS del módulo técnico cuando se usa el shortcode
+        // ===== CSS =====
+        $css_path = BB_PLUGIN_DIR . 'assets/css/tech/tech.css';
+        $ver_css  = file_exists( $css_path ) ? filemtime( $css_path ) : '1.0.0';
+
         wp_enqueue_style(
             'bb-tech-dashboard',
             BB_PLUGIN_URL . 'assets/css/tech/tech.css',
             array(),
-            file_exists( BB_PLUGIN_DIR . 'assets/css/tech/tech.css' )
-                ? filemtime( BB_PLUGIN_DIR . 'assets/css/tech/tech.css' )
-                : '1.0.0'
+            $ver_css
         );
 
+        // ===== Autocomplete TECH =====
+        $ac_path = BB_PLUGIN_DIR . 'assets/js/tech/autocomplete-address.js';
+        $ac_ver  = file_exists( $ac_path ) ? filemtime( $ac_path ) : '1.0.0';
+
         wp_enqueue_script(
-            'bb-tech-dashboard',
-            BB_PLUGIN_URL . 'assets/js/tech/tech.js',
+            'bb-tech-address-autocomplete',
+            BB_PLUGIN_URL . 'assets/js/tech/autocomplete-address.js',
             array( 'jquery' ),
-            file_exists( BB_PLUGIN_DIR . 'assets/js/tech/tech.js' )
-                ? filemtime( BB_PLUGIN_DIR . 'assets/js/tech/tech.js' )
-                : '1.0.0',
+            $ac_ver,
             true
         );
 
+        if ( function_exists( 'bb_google_places_loader' ) ) {
+            bb_google_places_loader( 'bb-tech-address-autocomplete' );
+        }
+
+        // ===== Avatar (Media modal) =====
+        $avatar_path = BB_PLUGIN_DIR . 'assets/js/tech/tech-avatar.js';
+        $avatar_ver  = file_exists( $avatar_path ) ? filemtime( $avatar_path ) : '1.0.0';
+
+        wp_enqueue_script(
+            'bb-tech-avatar-js',
+            BB_PLUGIN_URL . 'assets/js/tech/tech-avatar.js',
+            array( 'jquery' ),
+            $avatar_ver,
+            true
+        );
+    }
+
+    /**
+     * ✅ Dashboard shortcode
+     * - If not logged in: show login form + redirect back here
+     * - If logged in but not staff/admin: show message (+ optional apply link)
+     */
+    public function render_staff_dashboard( $atts = array(), $content = '' ) {
+
+        $this->ensure_assets_enqueued();
+
         ob_start();
 
-        echo '<!-- bb_staff_dashboard shortcode RUNNING -->';
+        $dashboard_url = $this->get_staff_dashboard_url();
 
-        // 1) Si NO está logueado → mensaje y link al login
+        // ✅ Not logged in => show login form (with redirect back)
         if ( ! is_user_logged_in() ) {
-            $login_url = wp_login_url( get_permalink() );
 
-            echo '<p>You must be logged in to view this page. 
-                        <a href="' . esc_url( $login_url ) . '">Log in</a>
-                  </p>';
+            // If WP is set to block access, this still works as normal WP login.
+            echo '<div class="bb-tech-card bb-tech-login">';
+
+            echo '<h2>Staff login</h2>';
+            echo '<p>Please log in to access the staff dashboard.</p>';
+
+            // Optional: show any login error message passed by wp-login
+            if ( isset($_GET['login']) && $_GET['login'] === 'failed' ) {
+                echo '<div class="bb-notice bb-notice--warning">Login failed. Please try again.</div>';
+            }
+
+            wp_login_form( array(
+                'echo'           => true,
+                'redirect'       => $dashboard_url,
+                'form_id'        => 'bb_staff_loginform',
+                'label_username' => __( 'Email or Username' ),
+                'label_password' => __( 'Password' ),
+                'label_remember' => __( 'Remember Me' ),
+                'label_log_in'   => __( 'Log In' ),
+                'remember'       => true,
+            ) );
+
+            echo '<p style="margin-top:10px;">';
+            echo '<a href="' . esc_url( wp_lostpassword_url( $dashboard_url ) ) . '">Forgot password?</a>';
+            echo '</p>';
+
+            // OPTIONAL: If you have an apply/register page, set it here:
+            // echo '<p><a class="button" href="' . esc_url( home_url('/become-a-tech/') ) . '">Apply to be a technician</a></p>';
+
+            echo '</div>';
 
             return ob_get_clean();
         }
 
-        // 2) Verificar rol: STAFF (bb_staff) o administrador
+        // ✅ Logged in => role check
         $user  = wp_get_current_user();
         $roles = (array) $user->roles;
 
         if ( ! array_intersect( array( 'bb_staff', 'administrator' ), $roles ) ) {
-            echo '<p>You do not have permission to access this dashboard.</p>';
+
+            echo '<div class="bb-tech-card bb-tech-no-access">';
+            echo '<h2>No access</h2>';
+            echo '<p>Your account does not have permission to view this page.</p>';
+
+            // Optional: show who is logged in + logout link
+            echo '<p style="opacity:.8;">Logged in as <strong>' . esc_html( $user->user_login ) . '</strong></p>';
+            echo '<p><a href="' . esc_url( wp_logout_url( $dashboard_url ) ) . '">Log out</a></p>';
+
+            // OPTIONAL apply link:
+            // echo '<p><a class="button" href="' . esc_url( home_url('/become-a-tech/') ) . '">Apply to be a technician</a></p>';
+
+            echo '</div>';
+
             return ob_get_clean();
         }
 
-        // 3) Renderizar shell/layout
-        if ( $this->shell instanceof BB_Tech_Shell ) {
-            $this->shell->render( $user );
-        } else {
-            echo '<p>Shell not initialized. Please check BB_Tech_Shell class.</p>';
-        }
+        // ✅ Authorized => render shell
+        $this->shell->render( $user );
 
         return ob_get_clean();
     }
 
     /**
-     * Restringe la Media Library para técnicos:
-     * - Admin ve todo
-     * - Técnicos (rol bb_staff) solo ven sus propios adjuntos
+     * Returns the staff dashboard URL (safe redirect target)
      */
+    private function get_staff_dashboard_url(): string {
+        // If your staff dashboard is a WP page slug "staff-dashboard"
+        if ( function_exists('get_permalink') ) {
+            $page = get_page_by_path( 'staff-dashboard' );
+            if ( $page ) {
+                return (string) get_permalink( $page->ID );
+            }
+        }
+        // fallback
+        return home_url( '/staff-dashboard/' );
+    }
+
     public function restrict_media_library_for_techs( $query ) {
 
-        // Si es admin, no tocamos nada
         if ( current_user_can( 'manage_options' ) ) {
             return $query;
         }
 
         $user = wp_get_current_user();
-        if ( ! $user || ! $user->ID ) {
-            return $query;
-        }
-
-        $roles = (array) $user->roles;
-
-        // Si el usuario es técnico (rol bb_staff)
-        if ( in_array( 'bb_staff', $roles, true ) ) {
+        if ( $user && $user->ID && in_array( 'bb_staff', (array) $user->roles, true ) ) {
             $query['author'] = $user->ID;
         }
 

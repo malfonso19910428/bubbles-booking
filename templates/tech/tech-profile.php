@@ -1,206 +1,236 @@
 <?php
-if ( ! defined( 'ABSPATH' ) ) exit;
+if ( ! defined('ABSPATH') ) exit;
 
 /**
- * Vista: My profile
- *
- * Variables esperadas:
- *  - $bb_current_user (WP_User)
- *  - $bb_profile      (array)
+ * Tech Profile Template (DEVICE UPLOAD VERSION) - FIXED
+ * - Avatar: <input type="file"> (solo dispositivo) + preview
+ * - Address: el input blanco SIEMPRE muestra la dirección completa guardada (formatted)
+ * - Hidden fields: formatted/line1/city/state/zip + place_id/lat/lng (estos son los que se guardan)
  */
 
-$current_user = isset( $bb_current_user ) && $bb_current_user instanceof WP_User
-    ? $bb_current_user
-    : wp_get_current_user();
+$p  = ( isset($bb_view['profile']) && is_array($bb_view['profile']) ) ? $bb_view['profile'] : array();
+$ui = ( isset($bb_view['ui']) && is_array($bb_view['ui']) ) ? $bb_view['ui'] : array();
 
-$profile = isset( $bb_profile ) && is_array( $bb_profile )
-    ? $bb_profile
-    : array();
+$errors   = ( isset($ui['errors']) && is_array($ui['errors']) ) ? $ui['errors'] : array();
+$messages = ( isset($ui['messages']) && is_array($ui['messages']) ) ? $ui['messages'] : array();
 
-// Valores desde nuestro perfil o, si están vacíos, desde WP_User
-$first_name = ! empty( $profile['first_name'] )
-    ? $profile['first_name']
-    : get_user_meta( $current_user->ID, 'first_name', true );
+$address   = ( isset($p['address']) && is_array($p['address']) ) ? $p['address'] : array();
+$geo       = ( isset($p['geo']) && is_array($p['geo']) ) ? $p['geo'] : array();
+$languages = ( isset($p['languages']) && is_array($p['languages']) ) ? $p['languages'] : array();
 
-$last_name = ! empty( $profile['last_name'] )
-    ? $profile['last_name']
-    : get_user_meta( $current_user->ID, 'last_name', true );
+$err = function(string $key) use ($errors): string {
+    return isset($errors[$key]) ? (string) $errors[$key] : '';
+};
+$has_err = function(string $key) use ($err): bool {
+    return $err($key) !== '';
+};
+$invalid_class = function(string $key) use ($has_err): string {
+    return $has_err($key) ? 'bb-input--invalid' : '';
+};
 
-$email = ! empty( $profile['email'] )
-    ? $profile['email']
-    : $current_user->user_email;
+$avatar_id = (int)($p['avatar_id'] ?? 0);
+$user_id   = (int)($p['user_id'] ?? 0);
+$status    = (string)($p['status'] ?? 'pending');
 
-$phone = isset( $profile['phone'] ) ? $profile['phone'] : '';
-
-$bio    = isset( $profile['bio'] )    ? $profile['bio']    : '';
-$radius = isset( $profile['radius'] ) ? $profile['radius'] : '';
-
-$address = isset( $profile['address'] ) && is_array( $profile['address'] )
-    ? $profile['address']
-    : array();
-
-$addr_line1 = isset( $address['line1'] ) ? $address['line1'] : '';
-$addr_city  = isset( $address['city'] )  ? $address['city']  : '';
-$addr_state = isset( $address['state'] ) ? $address['state'] : '';
-$addr_zip   = isset( $address['zip'] )   ? $address['zip']   : '';
-
-$languages = isset( $profile['languages'] ) && is_array( $profile['languages'] )
-    ? $profile['languages']
-    : array();
-
-$avatar_id = isset( $profile['avatar_id'] ) ? (int) $profile['avatar_id'] : 0;
-
-// Perfil incompleto si faltan campos críticos
-$is_profile_incomplete = ( $first_name === '' || $last_name === '' || $email === '' );
-
-// Status del perfil
-$profile_status = isset( $profile['status'] ) && $profile['status']
-    ? $profile['status']
-    : 'pending';
-
-// Mensajes
-$profile_saved = isset( $_GET['profile_saved'] ) && $_GET['profile_saved'] == '1';
+// ✅ Address full display (prefer formatted; si no, line1)
+$address_formatted = (string)($address['formatted'] ?? '');
+$address_line1     = (string)($address['line1'] ?? '');
+$address_input_val = $address_formatted !== '' ? $address_formatted : $address_line1;
 ?>
 
 <div class="bb-tech-card bb-tech-profile">
-    <?php if ( $profile_saved ) : ?>
-        <div class="bb-notice bb-notice--success">
-            Profile saved successfully.
-            <?php if ( $profile_status === 'pending' ) : ?>
-                <br><small>Your profile is pending admin review.</small>
-            <?php endif; ?>
-        </div>
-    <?php endif; ?>
 
-    <?php if ( $is_profile_incomplete ) : ?>
-        <div class="bb-notice bb-notice--warning">
-            Your profile is incomplete. Please fill in the required fields so customers can trust your information.
-        </div>
-    <?php endif; ?>
+  <?php if ( ! empty($messages) ) : ?>
+    <?php foreach ( $messages as $m ) :
+      $type = isset($m['type']) ? (string)$m['type'] : 'info';
+      $text = isset($m['text']) ? (string)$m['text'] : '';
+      if ( $text === '' ) continue;
+    ?>
+      <div class="bb-notice bb-notice--<?php echo esc_attr($type); ?>">
+        <?php echo esc_html($text); ?>
+      </div>
+    <?php endforeach; ?>
+  <?php endif; ?>
 
-    <div class="bb-tech-profile-status bb-tech-profile-status--<?php echo esc_attr( $profile_status ); ?>">
-        <strong>Profile status:</strong>
-        <?php echo esc_html( ucfirst( $profile_status ) ); ?>
-        <?php if ( $profile_status === 'pending' ) : ?>
-            <br><small>Your profile is under review and may not be visible to customers yet.</small>
-        <?php endif; ?>
+  <div class="bb-tech-profile-status bb-tech-profile-status--<?php echo esc_attr($status); ?>">
+    <strong>Profile status:</strong>
+    <?php echo esc_html( ucfirst($status) ); ?>
+  </div>
+
+  <h2>My profile</h2>
+
+  <form method="post" enctype="multipart/form-data">
+    <?php wp_nonce_field('bb_save_profile', 'bb_profile_nonce'); ?>
+    <input type="hidden" name="bb_profile_action" value="save">
+
+    <h3>Profile photo</h3>
+
+    <div class="bb-tech-profile-avatar">
+      <div id="bb_profile_avatar_preview">
+        <?php
+        echo $avatar_id
+          ? wp_get_attachment_image($avatar_id, 'thumbnail', false, array('class' => 'bb-profile-avatar'))
+          : get_avatar($user_id, 96, '', '', array('class' => 'bb-profile-avatar'));
+        ?>
+      </div>
+
+      <p style="margin-top:10px;">
+        <label for="bb_profile_avatar">Upload new profile photo</label><br>
+        <input type="file" name="bb_profile_avatar" id="bb_profile_avatar" accept="image/*">
+      </p>
+
+      <?php if ( ! empty($errors['avatar']) ) : ?>
+        <div class="bb-field-error"><?php echo esc_html((string)$errors['avatar']); ?></div>
+      <?php endif; ?>
     </div>
 
-    <h2>My profile</h2>
-    <p>Update your personal information, contact details, and service area.</p>
+    <h3>Personal info</h3>
 
-    <!-- 👇 IMPORTANTE: enctype para subir archivo -->
-    <form method="post" enctype="multipart/form-data">
-        <?php wp_nonce_field( 'bb_save_profile', 'bb_profile_nonce' ); ?>
-        <input type="hidden" name="bb_profile_action" value="save">
+    <div class="bb-field-row">
+      <div class="bb-field">
+        <label>First name</label>
+        <input
+          type="text"
+          name="profile[first_name]"
+          value="<?php echo esc_attr((string)($p['first_name'] ?? '')); ?>"
+          class="<?php echo esc_attr( $invalid_class('first_name') ); ?>"
+        >
+        <?php if ( $has_err('first_name') ) : ?>
+          <div class="bb-field-error"><?php echo esc_html($err('first_name')); ?></div>
+        <?php endif; ?>
+      </div>
 
-        <!-- Profile photo -->
-        <h3>Profile photo</h3>
+      <div class="bb-field">
+        <label>Last name</label>
+        <input
+          type="text"
+          name="profile[last_name]"
+          value="<?php echo esc_attr((string)($p['last_name'] ?? '')); ?>"
+          class="<?php echo esc_attr( $invalid_class('last_name') ); ?>"
+        >
+        <?php if ( $has_err('last_name') ) : ?>
+          <div class="bb-field-error"><?php echo esc_html($err('last_name')); ?></div>
+        <?php endif; ?>
+      </div>
+    </div>
 
-        <div class="bb-tech-profile-avatar">
-            <div id="bb_profile_avatar_preview">
-                <?php
-                if ( $avatar_id ) {
-                    echo wp_get_attachment_image( $avatar_id, 'thumbnail', false, array(
-                        'class' => 'bb-profile-avatar',
-                    ) );
-                } else {
-                    echo get_avatar( $current_user->ID, 96, '', '', array(
-                        'class' => 'bb-profile-avatar',
-                    ) );
-                }
-                ?>
-            </div>
-            <p>
-                <label for="bb_profile_avatar">Upload new profile photo</label><br>
-                <input type="file"
-                       name="bb_profile_avatar"
-                       id="bb_profile_avatar"
-                       accept="image/*">
-            </p>
-        </div>
+    <div class="bb-field-row">
+      <div class="bb-field">
+        <label>Email</label>
+        <input
+          type="email"
+          name="profile[email]"
+          value="<?php echo esc_attr((string)($p['email'] ?? '')); ?>"
+          class="<?php echo esc_attr( $invalid_class('email') ); ?>"
+        >
+        <?php if ( $has_err('email') ) : ?>
+          <div class="bb-field-error"><?php echo esc_html($err('email')); ?></div>
+        <?php endif; ?>
+      </div>
 
-        <!-- Personal info -->
-        <h3>Personal info</h3>
+      <div class="bb-field">
+        <label>Phone number</label>
+        <input
+          type="text"
+          name="profile[phone]"
+          value="<?php echo esc_attr((string)($p['phone'] ?? '')); ?>"
+          class="<?php echo esc_attr( $invalid_class('phone') ); ?>"
+        >
+        <?php if ( $has_err('phone') ) : ?>
+          <div class="bb-field-error"><?php echo esc_html($err('phone')); ?></div>
+        <?php endif; ?>
+      </div>
+    </div>
 
-        <div class="bb-field-row">
-            <div class="bb-field">
-                <label>First name</label>
-                <input type="text" name="profile[first_name]" value="<?php echo esc_attr( $first_name ); ?>">
-            </div>
-            <div class="bb-field">
-                <label>Last name</label>
-                <input type="text" name="profile[last_name]" value="<?php echo esc_attr( $last_name ); ?>">
-            </div>
-        </div>
+    <div class="bb-field">
+      <label>Short bio</label>
+      <textarea name="profile[bio]" rows="4"><?php echo esc_textarea((string)($p['bio'] ?? '')); ?></textarea>
+    </div>
 
-        <div class="bb-field-row">
-            <div class="bb-field">
-                <label>Email</label>
-                <input type="email" name="profile[email]" value="<?php echo esc_attr( $email ); ?>">
-            </div>
-            <div class="bb-field">
-                <label>Phone number</label>
-                <input type="text" name="profile[phone]" value="<?php echo esc_attr( $phone ); ?>" placeholder="(555) 123-4567">
-            </div>
-        </div>
+    <h3>Service area</h3>
 
-        <div class="bb-field">
-            <label>Short bio</label>
-            <textarea name="profile[bio]" rows="4"><?php echo esc_textarea( $bio ); ?></textarea>
-        </div>
+    <div class="bb-field-row">
+      <div class="bb-field">
+        <label>Radius (miles)</label>
+        <input
+          type="number"
+          step="5"
+          min="5"
+          name="profile[radius]"
+          value="<?php echo esc_attr((string)($p['radius'] ?? '')); ?>"
+          class="<?php echo esc_attr( $invalid_class('radius') ); ?>"
+        >
+        <?php if ( $has_err('radius') ) : ?>
+          <div class="bb-field-error"><?php echo esc_html($err('radius')); ?></div>
+        <?php endif; ?>
+      </div>
+    </div>
 
-        <!-- Service area -->
-        <h3>Service area</h3>
+    <h3>Address</h3>
 
-        <div class="bb-field-row">
-            <div class="bb-field">
-                <label>Radius (miles)</label>
-                <input type="number" step="5" min="5" name="profile[radius]" value="<?php echo esc_attr( $radius ); ?>">
-            </div>
-        </div>
+    <div class="bb-field">
+      <label>Street address</label>
 
-        <div class="bb-field">
-            <label>Street address</label>
-            <input type="text" name="profile[address_line1]" value="<?php echo esc_attr( $addr_line1 ); ?>">
-        </div>
+      <!-- ✅ UI input: SOLO para mostrar/escribir, NO se guarda directo -->
+      <input
+        type="text"
+        id="bb_tech_address_autocomplete"
+        value="<?php echo esc_attr($address_input_val); ?>"
+        placeholder="Start typing your address..."
+        autocomplete="off"
+        class="<?php echo esc_attr( $invalid_class('address') ); ?>"
+        style="width:100%;max-width:520px;"
+      >
 
-        <div class="bb-field-row">
-            <div class="bb-field">
-                <label>City</label>
-                <input type="text" name="profile[city]" value="<?php echo esc_attr( $addr_city ); ?>">
-            </div>
-            <div class="bb-field">
-                <label>State</label>
-                <input type="text" name="profile[state]" value="<?php echo esc_attr( $addr_state ); ?>">
-            </div>
-            <div class="bb-field">
-                <label>ZIP code</label>
-                <input type="text" name="profile[zip]" value="<?php echo esc_attr( $addr_zip ); ?>">
-            </div>
-        </div>
+      <?php if ( $has_err('address') ) : ?>
+        <div class="bb-field-error"><?php echo esc_html($err('address')); ?></div>
+      <?php endif; ?>
 
-        <!-- Languages -->
-        <h3>Languages</h3>
-        <?php
-        $lang_options = array(
-            'en' => 'English',
-            'es' => 'Spanish',
-            'pt' => 'Portuguese',
-        );
-        ?>
-        <div class="bb-field bb-field--inline-checkboxes">
-            <?php foreach ( $lang_options as $code => $label ) : ?>
-                <label>
-                    <input type="checkbox" name="profile[languages][]" value="<?php echo esc_attr( $code ); ?>"
-                        <?php checked( in_array( $code, $languages, true ) ); ?>>
-                    <?php echo esc_html( $label ); ?>
-                </label>
-            <?php endforeach; ?>
-        </div>
+      <small style="opacity:.75;">Start typing and select your address from the suggestions.</small>
+    </div>
 
-        <p class="bb-tech-profile-actions">
-            <button type="submit" class="button button-primary">Save profile</button>
-        </p>
-    </form>
+    <!-- ✅ REAL (lo que se guarda) -->
+    <input
+      type="hidden"
+      id="bb_tech_formatted"
+      name="profile[address][formatted]"
+      value="<?php echo esc_attr((string)($address['formatted'] ?? '')); ?>"
+    >
+
+    <input
+      type="hidden"
+      id="bb_tech_line1"
+      name="profile[address][line1]"
+      value="<?php echo esc_attr((string)($address['line1'] ?? '')); ?>"
+    >
+
+    <input type="hidden" id="bb_tech_city"  name="profile[address][city]"  value="<?php echo esc_attr((string)($address['city'] ?? '')); ?>">
+    <input type="hidden" id="bb_tech_state" name="profile[address][state]" value="<?php echo esc_attr((string)($address['state'] ?? '')); ?>">
+    <input type="hidden" id="bb_tech_zip"   name="profile[address][zip]"   value="<?php echo esc_attr((string)($address['zip'] ?? '')); ?>">
+
+    <input type="hidden" id="bb_tech_place_id" name="profile[geo][place_id]" value="<?php echo esc_attr((string)($geo['place_id'] ?? '')); ?>">
+    <input type="hidden" id="bb_tech_lat"      name="profile[geo][lat]"      value="<?php echo esc_attr((string)($geo['lat'] ?? '')); ?>">
+    <input type="hidden" id="bb_tech_lng"      name="profile[geo][lng]"      value="<?php echo esc_attr((string)($geo['lng'] ?? '')); ?>">
+
+    <h3>Languages</h3>
+    <div class="bb-field bb-field--inline-checkboxes">
+      <?php foreach ( array('en'=>'English','es'=>'Spanish','pt'=>'Portuguese') as $code => $label ) : ?>
+        <label>
+          <input
+            type="checkbox"
+            name="profile[languages][]"
+            value="<?php echo esc_attr($code); ?>"
+            <?php checked( in_array($code, $languages, true ) ); ?>
+          >
+          <?php echo esc_html($label); ?>
+        </label>
+      <?php endforeach; ?>
+    </div>
+
+    <p class="bb-tech-profile-actions">
+      <button type="submit" class="button button-primary">Save profile</button>
+    </p>
+
+  </form>
+
 </div>

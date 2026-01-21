@@ -4,11 +4,9 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * BB_Admin_Module
  *
- * Responsable de:
- * - Registrar el menú principal "Bubbles Booking" en wp-admin
- * - Registrar submenús (Dashboard, Catalog, Bookings, Settings)
- * - Instanciar el catálogo (services + addons) con su Shell
- * - Instanciar la Shell de Settings (tabs: Map, Payments, etc.)
+ * - Menú principal "Bubbles Booking"
+ * - Submenús: Dashboard, Catalog, Staff, Bookings, Settings
+ * - Conecta shells, controllers y templates
  */
 class BB_Admin_Module {
 
@@ -18,126 +16,191 @@ class BB_Admin_Module {
     /** @var BB_Admin_Settings_Shell|null */
     private ?BB_Admin_Settings_Shell $settings_shell = null;
 
+    /** @var BB_Admin_Staff_Controller|null */
+    private ?BB_Admin_Staff_Controller $staff_ctrl = null;
+
     public function __construct() {
 
-        // Incluir clases necesarias del admin
         $this->includes();
-
-        // Instanciar clases internas (repos, services, controllers, shells)
         $this->init_classes();
 
-        // Registrar menús del admin
+        // Menús admin
         add_action( 'admin_menu', array( $this, 'register_menu' ) );
+
+        // ✅ Procesar POST temprano (antes de output) para evitar "headers already sent"
+        add_action( 'admin_init', array( $this, 'maybe_handle_staff_post' ), 0 );
     }
 
     /**
-     * Incluye clases usadas por el módulo admin
+     * Includes admin dependencies
      */
     private function includes(): void {
 
-        // Dominio: Services catalog
-        require_once BB_PLUGIN_DIR . 'includes/domain/catalog/services/bb-services-repo.php';
-        require_once BB_PLUGIN_DIR . 'includes/domain/catalog/services/bb-services-service.php';
+        // ========= CATALOG =========
+        require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/service-catalogo/bb-admin-target-job-controller.php';
+        require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/service-catalogo/bb-admin-pricing-controller.php';
 
-        // Dominio: Add-ons catalog
-        require_once BB_PLUGIN_DIR . 'includes/domain/catalog/addons/bb-addons-repo.php';
-        require_once BB_PLUGIN_DIR . 'includes/domain/catalog/addons/bb-addons-service.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/pricing/tiers/bb-pricing-tiers-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/pricing/tiers/bb-pricing-tiers-service.php';
 
-        // UI catálogo: controladores + shell
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/job-targets/bb-job-targets-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/job-targets/bb-job-targets-service.php';
+
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/services/bb-services-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/services/bb-services-service.php';
+
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/addons/bb-addons-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/addons/bb-addons-service.php';
+
         require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/service-catalogo/bb-admin-services-controller.php';
         require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/service-catalogo/bb-admin-addons-controller.php';
         require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/service-catalogo/bb-admin-catalog-shell.php';
 
-        // ⚙️ Dominio Settings: MAP (ajusta rutas si son distintas)
-        require_once BB_PLUGIN_DIR . 'includes/domain/settings/map/bb-settings-map-repo.php';
-        require_once BB_PLUGIN_DIR . 'includes/domain/settings/map/bb-settings-map-service.php';
+        // ========= SETTINGS =========
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/settings/map/bb-settings-map-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/settings/map/bb-settings-map-service.php';
 
-        // ⚙️ Dominio Settings: STRIPE (ajusta rutas si son distintas)
-        require_once BB_PLUGIN_DIR . 'includes/domain/settings/payment/stripe/bb-settings-stripe-repo.php';
-        require_once BB_PLUGIN_DIR . 'includes/domain/settings/payment/stripe/bb-settings-stripe-service.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/settings/payment/stripe/bb-settings-stripe-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/settings/payment/stripe/bb-settings-stripe-service.php';
 
-        // UI Settings: shell + controladores de tabs
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/availability-rules/bb-availability-rules-repo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/availability-rules/bb-availability-rules-service.php';
+
         require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/settings/bb-admin-settings-shell.php';
         require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/settings/bb-admin-map-controller.php';
         require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/settings/bb-admin-payment-controller.php';
+        require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/settings/bb-admin-availability-rules-controller.php';
+
+        // ========= STAFF =========
+        require_once BB_PLUGIN_DIR . 'includes/domain/tech/profile/TechProfileRepo.php';
+        require_once BB_PLUGIN_DIR . 'includes/domain/admin/staff/bb-staff-service.php';
+        require_once BB_PLUGIN_DIR . 'includes/UI/Admin/screens/staff/bb-admin-staff-controller.php';
     }
 
     /**
-     * Instancia clases de dominio + controllers + shells
+     * Instantiate services, controllers and shells
      */
     private function init_classes(): void {
 
-        // === Catálogo: dominio + controllers ===
+        // ===== Catalog =====
         $services_repo    = new BB_Services_Repo();
         $services_service = new BB_Services_Service( $services_repo );
         $services_ctrl    = new BB_Admin_Services_Controller( $services_service );
+
+        $job_repo    = new BB_Job_Targets_Repo();
+        $job_service = new BB_Job_Targets_Service( $job_repo );
+        $job_ctrl    = new BB_Admin_Target_Job_Controller( $job_service );
 
         $addons_repo    = new BB_Addons_Repo();
         $addons_service = new BB_Addons_Service( $addons_repo );
         $addons_ctrl    = new BB_Admin_Addons_Controller( $addons_service );
 
-        // Shell (tabs + layout) – solo lógica de catálogo
-        $this->catalog_shell = new BB_Admin_Catalog_Shell( $services_ctrl, $addons_ctrl );
+        $pricing_repo    = new BB_Pricing_Tiers_Repo();
+        $pricing_service = new BB_Pricing_Tiers_Service( $pricing_repo );
+        $pricing_ctrl    = new BB_Admin_Pricing_Controller( $pricing_service, $services_service );
 
-        // === Settings: dominio Map + Stripe ===
-        // Ajusta los nombres si tus clases se llaman distinto
-        $map_repo     = new BB_Settings_Map_Repo();
-        $map_service  = new BB_Settings_Map_Service( $map_repo );
+        $this->catalog_shell = new BB_Admin_Catalog_Shell(
+            $services_ctrl,
+            $addons_ctrl,
+            $pricing_ctrl,
+            $job_ctrl
+        );
+
+        // ===== Settings =====
+        $map_repo    = new BB_Settings_Map_Repo();
+        $map_service = new BB_Settings_Map_Service( $map_repo );
 
         $stripe_repo    = new BB_Settings_Stripe_Repo();
         $stripe_service = new BB_Settings_Stripe_Service( $stripe_repo );
 
-        // Shell de Settings: controla tabs internos (map, payments, etc.)
-        $this->settings_shell = new BB_Admin_Settings_Shell( $map_service, $stripe_service );
+        $av_repo    = new BB_Availability_Rules_Repo();
+        $av_service = new BB_Availability_Rules_Service( $av_repo );
+        $av_ctrl    = new BB_Admin_Availability_Rules_Controller( $av_service );
+
+        $this->settings_shell = new BB_Admin_Settings_Shell(
+            $map_service,
+            $stripe_service,
+            $av_ctrl
+        );
+
+        // ===== Staff =====
+        $profile_repo   = new TechProfileRepo();
+        $staff_service  = new BB_Staff_Service( $profile_repo );
+        $this->staff_ctrl = new BB_Admin_Staff_Controller( $staff_service );
     }
 
     /**
-     * Registrar menú principal y submenús
+     * Procesa POST solo en la pantalla bb-staff y temprano (admin_init).
+     * Evita "Cannot modify header information".
+     */
+    public function maybe_handle_staff_post(): void {
+
+        if ( ! is_admin() ) return;
+        if ( ! current_user_can( 'manage_options' ) ) return;
+        if ( ! $this->staff_ctrl ) return;
+
+        // Solo cuando estamos en la pantalla del plugin
+        $page = isset($_GET['page']) ? sanitize_text_field( wp_unslash($_GET['page']) ) : '';
+        if ( $page !== 'bb-staff' ) return;
+
+        // Solo si es POST
+        if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) !== 'POST' ) return;
+
+        $this->staff_ctrl->handle_request();
+        // handle_request() hace redirect+exit (asegúrate que redirect_with tenga exit)
+    }
+
+    /**
+     * Admin menu
      */
     public function register_menu() {
 
-        // Menú principal
         add_menu_page(
-            'Bubbles Booking',              // Page title
-            'Bubbles Booking',              // Menu title
-            'manage_options',               // Capability
-            'bubbles-booking',              // Menu slug
+            'Bubbles Booking',
+            'Bubbles Booking',
+            'manage_options',
+            'bubbles-booking',
             array( $this, 'render_dashboard' ),
             'dashicons-calendar-alt',
             56
         );
 
-        // Submenú: Dashboard
         add_submenu_page(
             'bubbles-booking',
-            'Bubbles Booking',
+            'Dashboard',
             'Dashboard',
             'manage_options',
             'bubbles-booking',
             array( $this, 'render_dashboard' )
         );
 
-        // Submenú: Catalog (Services + Add-ons)
         add_submenu_page(
-            'bubbles-booking',              // parent_slug
-            'Services & Add-ons',           // page_title
-            'Catalog',                      // menu_title
-            'manage_options',               // capability
-            'bb-catalog',                   // menu_slug (slug lógico)
-            array( $this, 'render_catalog' )// callback
+            'bubbles-booking',
+            'Catalog',
+            'Catalog',
+            'manage_options',
+            'bb-catalog',
+            array( $this, 'render_catalog' )
         );
 
-        // Submenú: Bookings (placeholder)
+        add_submenu_page(
+            'bubbles-booking',
+            'Staff',
+            'Staff',
+            'manage_options',
+            'bb-staff',
+            array( $this, 'render_staff' )
+        );
+
         add_submenu_page(
             'bubbles-booking',
             'Bookings',
             'Bookings',
             'manage_options',
-            'bubbles-booking-bookings',
+            'bb-bookings',
             array( $this, 'render_bookings' )
         );
 
-        // Submenú: Settings
         add_submenu_page(
             'bubbles-booking',
             'Settings',
@@ -148,44 +211,62 @@ class BB_Admin_Module {
         );
     }
 
-    /**
-     * Render principal del dashboard
-     */
-    public function render_dashboard() {
-        $template = BB_PLUGIN_DIR . 'templates/Admin/admin-dashboard.php';
+    // ===================== RENDERS =====================
 
-        if ( file_exists( $template ) ) {
-            require $template;
-        } else {
-            echo '<div class="wrap"><h1>Bubbles Booking</h1><p>Admin dashboard coming soon.</p></div>';
+    public function render_dashboard() {
+        $tpl = BB_PLUGIN_DIR . 'templates/Admin/admin-dashboard.php';
+
+        if ( ! file_exists( $tpl ) ) {
+            wp_die( 'Admin dashboard template missing:<br><code>' . esc_html( $tpl ) . '</code>' );
         }
+
+        require $tpl;
+    }
+
+    public function render_catalog() {
+
+        if ( ! $this->catalog_shell ) {
+            wp_die( 'Catalog shell not initialized' );
+        }
+
+        $this->catalog_shell->render_screen();
     }
 
     /**
-     * Render del submenú Catalog: delega en el shell
+     * ✅ STAFF (render SOLO)
+     * POST ya se procesó en admin_init.
      */
-    public function render_catalog() {
+    public function render_staff() {
 
-        if ( $this->catalog_shell instanceof BB_Admin_Catalog_Shell ) {
-            $this->catalog_shell->render_screen();
-        } else {
-            echo '<div class="wrap"><h1>Catalog</h1><p>Catalog shell not initialized.</p></div>';
+        if ( ! $this->staff_ctrl ) {
+            wp_die( 'Staff controller not initialized' );
         }
+
+        $bb_view = $this->staff_ctrl->get_view_data();
+
+        $tpl = BB_PLUGIN_DIR . 'templates/Admin/staff/admin-staff.php';
+
+        if ( ! file_exists( $tpl ) ) {
+            wp_die(
+                'Staff template NOT FOUND:<br><code>' . esc_html( $tpl ) . '</code>',
+                'Bubbles Booking – Staff Error',
+                array( 'response' => 500 )
+            );
+        }
+
+        require $tpl;
     }
 
     public function render_bookings() {
-        echo '<div class="wrap"><h1>Bookings</h1><p>Bookings management coming soon.</p></div>';
+        echo '<div class="wrap"><h1>Bookings</h1><p>Coming soon.</p></div>';
     }
 
-    /**
-     * Render del submenú Settings: delega en la Settings_Shell
-     */
     public function render_settings() {
 
-        if ( $this->settings_shell instanceof BB_Admin_Settings_Shell ) {
-            $this->settings_shell->render();
-        } else {
-            echo '<div class="wrap"><h1>Settings</h1><p>Settings shell not initialized.</p></div>';
+        if ( ! $this->settings_shell ) {
+            wp_die( 'Settings shell not initialized' );
         }
+
+        $this->settings_shell->render();
     }
 }

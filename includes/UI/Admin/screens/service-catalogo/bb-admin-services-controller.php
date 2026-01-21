@@ -1,13 +1,6 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-/**
- * Controlador de la pestaña Services
- * Responsable de:
- *  - Manejar el POST de servicios
- *  - Pedir la lista al service de dominio
- *  - Indicar si se creó un servicio
- */
 class BB_Admin_Services_Controller {
 
     /** @var BB_Services_Service */
@@ -20,14 +13,11 @@ class BB_Admin_Services_Controller {
         $this->service = $service;
     }
 
-    /**
-     * Procesa el formulario de creación de Service
-     */
-    public function handle_post() {
+    public function handle_post(): void {
 
         if (
-            ! isset( $_POST['bb_services_action'] )
-            || $_POST['bb_services_action'] !== 'add'
+            ! isset( $_POST['bb_services_action'] ) ||
+            sanitize_key( wp_unslash($_POST['bb_services_action']) ) !== 'add'
         ) {
             return;
         }
@@ -36,32 +26,31 @@ class BB_Admin_Services_Controller {
             return;
         }
 
+        $name        = isset($_POST['service_name']) ? sanitize_text_field( wp_unslash($_POST['service_name']) ) : '';
+        $description = isset($_POST['service_description']) ? sanitize_textarea_field( wp_unslash($_POST['service_description']) ) : '';
+        $price       = isset($_POST['service_price']) ? (float) $_POST['service_price'] : 0.0;
+        $duration    = isset($_POST['service_duration']) ? (int) $_POST['service_duration'] : 0;
+        $active      = isset($_POST['service_active']) ? 1 : 0;
+
+        if ( $price < 0 ) $price = 0.0;
+        if ( $duration < 0 ) $duration = 0;
+
         $created = $this->service->create_from_form( array(
-            'name'        => $_POST['service_name']        ?? '',
-            'description' => $_POST['service_description'] ?? '',
-            'price'       => $_POST['service_price']       ?? 0,
-            'duration'    => $_POST['service_duration']    ?? 0,
-            'active'      => isset( $_POST['service_active'] ) ? 1 : 0,
+            'name'        => $name,
+            'description' => $description,
+            'price'       => $price,     // ✅ tu service ya lo convierte a base_price
+            'duration'    => $duration,
+            'active'      => $active,
         ) );
 
         $this->created = (bool) $created;
     }
 
-    /**
-     * Devuelve la lista de servicios para la vista
-     *
-     * @return array
-     */
-    public function get_list() {
+    public function get_list(): array {
         return $this->service->get_all();
     }
 
-    /**
-     * Indica si en este request se creó un servicio
-     *
-     * @return bool
-     */
-    public function was_created() {
+    public function was_created(): bool {
         return $this->created;
     }
 }

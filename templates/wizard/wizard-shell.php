@@ -44,19 +44,57 @@ $form_action = remove_query_arg(
     get_permalink()
 );
 
-// Token persistente
+// Token persistente (Draft token)
 $bb_token = '';
 $token_file = BB_PLUGIN_DIR . 'includes/core/bb-draft-steps-token.php';
 if ( file_exists( $token_file ) ) {
     require_once $token_file;
     if ( class_exists( 'BB_Draft_Steps_Token' ) ) {
-        $bb_token = BB_Draft_Steps_Token::get_or_create();
+        $bb_token = (string) BB_Draft_Steps_Token::get_or_create();
     }
 }
 
-// ✅ En payment NO queremos que exista "Continue >>" (solo pagar)
+// fallback: si por alguna razón no cargó el token helper, intenta desde state
+if ( $bb_token === '' && ! empty( $state['bb_token'] ) ) {
+    $bb_token = (string) $state['bb_token'];
+}
+if ( $bb_token === '' && ! empty( $state['draft_token'] ) ) {
+    $bb_token = (string) $state['draft_token'];
+}
+
+// En payment NO queremos que exista Continue
 $hide_continue = ( $current_step === 'payment' );
 
+// ======================================================
+// Coverage info (solo para mostrar mensaje / debug)
+// El DISABLE del botón se controla en JS (Address step)
+// ======================================================
+$coverage = null;
+if ( isset($state['address']['coverage']) && is_array($state['address']['coverage']) ) {
+    $coverage = $state['address']['coverage'];
+} elseif ( isset($state['coverage']) && is_array($state['coverage']) ) {
+    $coverage = $state['coverage'];
+}
+
+$coverage_yes = null;
+if ( is_array($coverage) ) {
+    if ( array_key_exists('yes', $coverage) ) {
+        $coverage_yes = (bool) $coverage['yes'];
+    } elseif ( array_key_exists('ok', $coverage) ) {
+        $coverage_yes = (bool) $coverage['ok'];
+    }
+}
+
+// Optional message (si quieres mostrarlo; NO bloquea botón aquí)
+$coverage_block_msg = '';
+if ( $current_step === 'address' && $coverage_yes === false ) {
+    $reason = isset($coverage['reason']) ? (string) $coverage['reason'] : 'out_of_service_area';
+    if ( $reason === 'invalid_location' ) {
+        $coverage_block_msg = 'Please select a valid address from the suggestions.';
+    } else {
+        $coverage_block_msg = 'Sorry, we don’t currently serve this area.';
+    }
+}
 ?>
 <div class="bb-wizard bb-wizard-wrapper">
 
@@ -95,11 +133,11 @@ $hide_continue = ( $current_step === 'payment' );
             <?php if ( $can_debug ) : ?>
                 <pre style="background:#f7f7ff;border:1px solid #cfcfff;padding:10px;overflow:auto;max-height:220px;">
 <?php echo esc_html( print_r( array(
-    'shell_file' => $state['_dbg_shell_file'] ?? '',
-    'controller' => $state['_dbg_controller'] ?? array(),
-    'last_post'  => $state['_dbg_shell_before_controller'] ?? array(),
-    'has_date'   => isset($state['date']) ? 1 : 0,
-    'date'       => $state['date'] ?? null,
+    'shell_file'    => $state['_dbg_shell_file'] ?? '',
+    'last_post'     => $state['_dbg_shell_before_controller'] ?? array(),
+    'bb_token'      => $bb_token,
+    'coverage'      => $coverage,
+    'coverage_yes'  => $coverage_yes,
 ), true ) ); ?>
                 </pre>
             <?php endif; ?>
@@ -111,6 +149,13 @@ $hide_continue = ( $current_step === 'payment' );
 
                 <?php if ( $bb_token !== '' ) : ?>
                     <input type="hidden" name="bb_token" value="<?php echo esc_attr( $bb_token ); ?>" />
+                    <input type="hidden" id="bb_draft_token" name="bb_draft_token" value="<?php echo esc_attr( $bb_token ); ?>" />
+                <?php endif; ?>
+
+                <?php if ( $coverage_block_msg !== '' ) : ?>
+                    <div class="bb-errors" style="margin-bottom:12px;">
+                        <ul><li><?php echo esc_html( $coverage_block_msg ); ?></li></ul>
+                    </div>
                 <?php endif; ?>
 
                 <?php if ( ! empty( $errors ) ) : ?>
@@ -147,10 +192,16 @@ $hide_continue = ( $current_step === 'payment' );
                         </button>
                     <?php endif; ?>
 
-                    <?php if ( empty( $buttons['continue_disabled'] ) && ! $hide_continue ) : ?>
-                        <button type="submit" name="bb_continue" value="1"
-                                class="bb-btn bb-btn-continue"
-                                onclick="this.form.bb_nav.value='continue';">
+                    <?php if ( ! $hide_continue ) : ?>
+                        <?php $continue_disabled = ( ! empty($buttons['continue_disabled']) ); ?>
+                        <button
+                            type="submit"
+                            name="bb_continue"
+                            value="1"
+                            class="bb-btn bb-btn-continue<?php echo $continue_disabled ? ' is-disabled' : ''; ?>"
+                            onclick="if(!this.disabled){ this.form.bb_nav.value='continue'; }"
+                            <?php disabled( $continue_disabled ); ?>
+                        >
                             Continue &gt;&gt;
                         </button>
                     <?php endif; ?>

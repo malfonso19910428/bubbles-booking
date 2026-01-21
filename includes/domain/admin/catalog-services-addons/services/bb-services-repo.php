@@ -8,7 +8,6 @@ class BB_Services_Repo {
 
     public function __construct() {
         global $wpdb;
-        // Todas nuestras tablas: prefix + bb_...
         $this->table_name = $wpdb->prefix . 'bb_services';
     }
 
@@ -88,25 +87,27 @@ class BB_Services_Repo {
             return false;
         }
 
-        $now   = current_time( 'mysql' );
+        $now = current_time( 'mysql' );
+
         $fields = array(
-    'name'             => $data['name']             ?? '',
-    'description'      => $data['description']      ?? '',
-    'base_price'       => $data['base_price']       ?? 0,
-    'duration_minutes' => $data['duration_minutes'] ?? 0,
-    'active'           => isset( $data['active'] ) ? (int) $data['active'] : 1,
-    'updated_at'       => $now,
-);
+            'name'             => $data['name']             ?? '',
+            'description'      => $data['description']      ?? '',
+            'base_price'       => $data['base_price']       ?? 0,
+            'duration_minutes' => $data['duration_minutes'] ?? 0,
+            'active'           => isset( $data['active'] ) ? (int) $data['active'] : 1,
+            'sort_order'       => $data['sort_order']       ?? 0,
+            'updated_at'       => $now,
+        );
 
-$formats = array(
-    '%s',
-    '%s',
-    '%f',
-    '%d',
-    '%d',
-    '%s',
-);
-
+        $formats = array(
+            '%s', // name
+            '%s', // description
+            '%f', // base_price
+            '%d', // duration_minutes
+            '%d', // active
+            '%d', // sort_order
+            '%s', // updated_at
+        );
 
         $updated = $wpdb->update(
             $this->table_name,
@@ -146,33 +147,42 @@ $formats = array(
     }
 
     /**
-     * Devuelve todos los servicios activos
+     * Devuelve todos los servicios (activos o no), ordenados.
+     *
+     * Nota: Devuelve base_price como campo principal.
+     * Incluye price como alias temporal para compatibilidad.
      */
     public function get_all(): array {
         global $wpdb;
 
-  $rows = $wpdb->get_results(
-    "SELECT id, name, description, base_price, duration_minutes, active, sort_order
-     FROM {$this->table_name}
-     ORDER BY active DESC, sort_order ASC, name ASC",
-    ARRAY_A
-);
-
-
-
+        $rows = $wpdb->get_results(
+            "SELECT id, name, description, base_price, duration_minutes, active, sort_order
+             FROM {$this->table_name}
+             ORDER BY active DESC, sort_order ASC, name ASC",
+            ARRAY_A
+        );
 
         if ( ! is_array( $rows ) || empty( $rows ) ) {
             return array();
         }
 
         return array_map( function ( $row ) {
+
+            $base = isset( $row['base_price'] ) ? (float) $row['base_price'] : 0.0;
+
             return array(
                 'id'               => (int) ( $row['id'] ?? 0 ),
-                'name'             => $row['name'] ?? '',
-                'description'      => $row['description'] ?? '',
-                'price'            => isset( $row['base_price'] ) ? (float) $row['base_price'] : 0,
+                'name'             => (string) ( $row['name'] ?? '' ),
+                'description'      => (string) ( $row['description'] ?? '' ),
+
+                // ✅ campo correcto
+                'base_price'       => $base,
+
+                // ⚠️ alias temporal (quítalo cuando todo use base_price)
+                'price'            => $base,
+
                 'duration_minutes' => isset( $row['duration_minutes'] ) ? (int) $row['duration_minutes'] : 0,
-                'active'           => isset( $row['active'] ) ? (bool) $row['active'] : true,
+                'active'           => isset( $row['active'] ) ? (int) $row['active'] : 1,
                 'sort_order'       => isset( $row['sort_order'] ) ? (int) $row['sort_order'] : 0,
             );
         }, $rows );
@@ -180,6 +190,9 @@ $formats = array(
 
     /**
      * Obtiene un servicio por ID (aunque esté inactivo)
+     *
+     * Nota: Devuelve base_price como campo principal.
+     * Incluye price como alias temporal para compatibilidad.
      */
     public function get_by_id( int $id ): ?array {
         global $wpdb;
@@ -202,13 +215,21 @@ $formats = array(
             return null;
         }
 
+        $base = isset( $row['base_price'] ) ? (float) $row['base_price'] : 0.0;
+
         return array(
             'id'               => (int) ( $row['id'] ?? 0 ),
-            'name'             => $row['name'] ?? '',
-            'description'      => $row['description'] ?? '',
-            'price'            => isset( $row['base_price'] ) ? (float) $row['base_price'] : 0,
+            'name'             => (string) ( $row['name'] ?? '' ),
+            'description'      => (string) ( $row['description'] ?? '' ),
+
+            // ✅ campo correcto
+            'base_price'       => $base,
+
+            // ⚠️ alias temporal
+            'price'            => $base,
+
             'duration_minutes' => isset( $row['duration_minutes'] ) ? (int) $row['duration_minutes'] : 0,
-            'active'           => isset( $row['active'] ) ? (bool) $row['active'] : true,
+            'active'           => isset( $row['active'] ) ? (int) $row['active'] : 1,
             'sort_order'       => isset( $row['sort_order'] ) ? (int) $row['sort_order'] : 0,
         );
     }

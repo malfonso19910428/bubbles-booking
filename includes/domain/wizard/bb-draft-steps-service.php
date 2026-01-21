@@ -5,7 +5,7 @@ final class BB_Draft_Steps_Service {
 
     private BB_Draft_Steps_Repo $repo;
     private string $token;
-    private int $ttl_hours;
+    private int $ttl_hours; 
 
     /** @var array */
     private array $state = array();

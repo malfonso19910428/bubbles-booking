@@ -220,74 +220,7 @@
 
 /* ---- Calendario compacto sin colores forzados ---- */
 
-.bb-calendar {
-    width: auto;
-    margin: 0 auto 1.2rem auto;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-}
 
-.bb-calendar thead th {
-    text-align: center;
-    padding: 0.3rem 0;
-    width: 38px;
-    min-width: 38px;
-    font-weight: 600;
-    color: inherit;
-}
-
-.bb-calendar tbody td {
-    text-align: center;
-    padding: 0.25rem 0.1rem;
-    height: 38px;
-    width: 38px;
-    min-width: 38px;
-}
-
-/* Días */
-.bb-cal-day {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    min-height: 32px;
-    max-width: 32px;
-    max-height: 32px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    border-radius: 50%;
-    padding: 0;
-    margin: 0 auto;
-
-    background: transparent;    /* tema define fondo */
-    border: 1px solid currentColor;
-    cursor: pointer;
-    font-size: 0.8rem;
-    color: inherit;
-    transition: 0.15s ease;
-}
-
-.bb-cal-day:hover {
-    opacity: 0.75;
-    transform: translateY(-1px);
-}
-
-.bb-cal-day.is-selected {
-    background: currentColor;   /* usa color del theme */
-    color: #fff;
-    font-weight: 600;
-}
-
-/* Días inactivos */
-.bb-cal-day.disabled,
-.bb-calendar .disabled {
-    background: transparent;
-    opacity: 0.25;
-    cursor: default;
-    box-shadow: none;
-}
 #bb-stripe-card-element {
   min-height: 48px;
   width: 100%;
@@ -356,4 +289,4 @@
     }
 }
 
-/* ----fin de calenario ---- */
+

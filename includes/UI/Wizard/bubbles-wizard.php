@@ -1,165 +1,214 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-
 if ( ! class_exists( 'Bubbles_Wizard' ) ) {
 
 class Bubbles_Wizard {
 
     /** @var string[] */
-    protected $steps = array( 'vehicle', 'package', 'addons', 'address', 'date', 'confirm', 'payment' );
+    protected $steps = array( 'vehicle', 'package', 'addons', 'address', 'date', 'tech', 'customer', 'payment' );
+
+    /** @var string */
+    private string $picker_handle = 'bb-picker';
 
     public function __construct() {
         $this->includes();
 
         add_shortcode( 'bubbles_wizard', array( $this, 'render' ) );
-        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+
+        // Importante: deja que Elementor/tema registren cosas primero
+        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ), 20 );
     }
 
     /**
-     * Includes base del wizard (handlers PHP, AJAX endpoints)
+     * Includes base del wizard (AJAX endpoints)
      */
     private function includes(): void {
 
-        // AJAX proxy para vehicle picker (CORS-safe)
-        $ajax = BB_PLUGIN_DIR . 'includes/UI/Wizard/ajax/bb-vehicle-ajax.php';
-        if ( file_exists( $ajax ) ) {
-            require_once $ajax;
-        }
+        $ajax1 = BB_PLUGIN_DIR . 'includes/UI/Wizard/ajax/bb-vehicle-ajax.php';
+        if ( file_exists( $ajax1 ) ) require_once $ajax1;
+
+        $ajax2 = BB_PLUGIN_DIR . 'includes/UI/Wizard/ajax/bb-address-coverage-ajax.php';
+        if ( file_exists( $ajax2 ) ) require_once $ajax2;
+
+        $ajax3 = BB_PLUGIN_DIR . 'includes/UI/Wizard/ajax/bb-wizard-slots-ajax.php';
+        if ( file_exists( $ajax3 ) ) require_once $ajax3;
+
+        // ✅ Finalize booking AFTER payment
+        $ajax4 = BB_PLUGIN_DIR . 'includes/UI/Wizard/ajax/bb-finalize-booking-ajax.php';
+        if ( file_exists( $ajax4 ) ) require_once $ajax4;
     }
 
-    /**
-     * Encola JS/CSS del wizard
-     */
-    public function enqueue_assets() {
+    private function should_enqueue_assets(): bool {
 
-        if ( is_admin() ) return;
-        if ( ! is_singular() ) return;
+        if ( is_admin() ) return false;
 
+        // Caso Elementor: el wizard vive en /pricing
+        if ( is_page( 'pricing' ) ) return true;
+
+        // Caso normal: página/post con shortcode
         global $post;
-        if ( ! ( $post instanceof WP_Post ) ) return;
-
-        // Solo si la página tiene el shortcode
-        if ( ! has_shortcode( $post->post_content, 'bubbles_wizard' ) ) {
-            return;
+        if ( $post instanceof WP_Post ) {
+            if ( has_shortcode( (string) $post->post_content, 'bubbles_wizard' ) ) return true;
         }
 
-        $ver = defined('BB_VERSION') ? BB_VERSION : '1.0.0';
+        return false;
+    }
 
-        // === CSS ===
-        wp_enqueue_style( 'bb-picker', BB_PLUGIN_URL . 'assets/css/wizard/bb-picker.css', array(), $ver );
-        wp_enqueue_style( 'bb-date',   BB_PLUGIN_URL . 'assets/css/wizard/bb-date.css',   array(), $ver );
-        wp_enqueue_style( 'bb-wizard', BB_PLUGIN_URL . 'assets/css/wizard/bb-wizard.css', array(), $ver );
+    public function enqueue_assets(): void {
 
-        // === JS: Vehicle picker ===
-        wp_enqueue_script('bb-vehicle-picker',BB_PLUGIN_URL . 'assets/js/wizard/bb-picker.js',
-            array(),
-            $ver,
-            true
-        );
+        if ( ! $this->should_enqueue_assets() ) return;
 
-        wp_localize_script('bb-vehicle-picker','BBPickerData', array(
-                'ajaxUrl' => admin_url( 'admin-ajax.php' ),'nonce'   => wp_create_nonce( 'bb_picker_nonce' ),
-            )
-        );
+        $ver = defined( 'BB_VERSION' ) ? BB_VERSION : '1.0.0';
 
         /**
-         * ===== Google Places + Address Autocomplete =====
+         * Helper: version por filemtime (cache bust)
          */
-        $places_key = function_exists('bb_google_places_key') ? bb_google_places_key() : '';
-        $addr_deps  = array();
+        $bb_css_ver = function( $rel_path ) use ( $ver ) {
+            $abs = BB_PLUGIN_DIR . ltrim( $rel_path, '/' );
+            return file_exists( $abs ) ? (string) filemtime( $abs ) : $ver;
+        };
 
-        if ( $places_key !== '' ) {
-            // Evitar doble carga por si otro plugin/tema lo mete
-            if ( ! wp_script_is( 'bb-google-places', 'enqueued' ) && ! wp_script_is( 'bb-google-places', 'done' ) ) {
-               wp_enqueue_script(
-  'bb-google-places',
-  'https://maps.googleapis.com/maps/api/js?key=' . rawurlencode($places_key) . '&libraries=places&loading=async',
-  array(),
-  null,
-  true
-);
+        // ===== CSS =====
+        wp_enqueue_style( 'bb-picker', BB_PLUGIN_URL . 'assets/css/wizard/bb-picker.css', array(), $bb_css_ver('assets/css/wizard/bb-picker.css') );
+        wp_enqueue_style( 'bb-date',   BB_PLUGIN_URL . 'assets/css/wizard/bb-date.css',   array(), $bb_css_ver('assets/css/wizard/bb-date.css') );
+        wp_enqueue_style( 'bb-wizard', BB_PLUGIN_URL . 'assets/css/wizard/bb-wizard.css', array(), $bb_css_ver('assets/css/wizard/bb-wizard.css') );
 
-            }
-            $addr_deps[] = 'bb-google-places';
+        wp_enqueue_style( 'bb-flatpickr', BB_PLUGIN_URL . 'assets/css/wizard/flatpickr.min.css', array(), '4.6.13' );
+
+        // ===== JS: Flatpickr =====
+        $fp_path = BB_PLUGIN_DIR . 'assets/js/wizard/flatpickr.min.js';
+        $fp_ver  = file_exists( $fp_path ) ? (string) filemtime( $fp_path ) : '4.6.13';
+
+        wp_enqueue_script( 'bb-flatpickr', BB_PLUGIN_URL . 'assets/js/wizard/flatpickr.min.js', array(), $fp_ver, true );
+
+        // ===== JS: Vehicle Picker =====
+        $picker_path = BB_PLUGIN_DIR . 'assets/js/wizard/bb-picker.js';
+        $picker_ver  = file_exists( $picker_path ) ? (string) filemtime( $picker_path ) : $ver;
+
+        wp_enqueue_script( 'bb-picker', BB_PLUGIN_URL . 'assets/js/wizard/bb-picker.js', array(), $picker_ver, true );
+
+        wp_localize_script( 'bb-picker', 'BBPickerData', array(
+            'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+            'nonce'   => wp_create_nonce( 'bb_picker_nonce' ),
+        ) );
+
+        // ===== Address autocomplete =====
+        $addr_path = BB_PLUGIN_DIR . 'assets/js/wizard/bb-address-autocomplete.js';
+        $addr_ver  = file_exists( $addr_path ) ? (string) filemtime( $addr_path ) : $ver;
+
+        wp_enqueue_script( 'bb-address-autocomplete', BB_PLUGIN_URL . 'assets/js/wizard/bb-address-autocomplete.js', array(), $addr_ver, true );
+
+        wp_localize_script( 'bb-address-autocomplete', 'BBAddressData', array(
+            'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+            'nonce'   => wp_create_nonce( 'bb_address_coverage_nonce' ),
+            'action'  => 'bb_wizard_address_coverage',
+        ) );
+
+        if ( function_exists( 'bb_google_places_loader' ) ) {
+            bb_google_places_loader( 'bb-address-autocomplete' );
         }
 
-        // ✅ Encolar SOLO una vez el autocomplete
-        wp_enqueue_script('bb-address-autocomplete',BB_PLUGIN_URL . 'assets/js/wizard/bb-address-autocomplete.js',
-            $addr_deps,$ver, true );
+        // ===== Date step =====
+        $date_path = BB_PLUGIN_DIR . 'assets/js/wizard/bb-date.js';
+        $date_ver  = file_exists( $date_path ) ? (string) filemtime( $date_path ) : $ver;
 
-       /**
- * ===== Stripe =====
- */
+        wp_enqueue_script( 'bb-date-js', BB_PLUGIN_URL . 'assets/js/wizard/bb-date.js', array( 'bb-flatpickr' ), $date_ver, true );
 
-// 1) Registra stripe-v3 una sola vez (no duplica si ya existe)
-if ( ! wp_script_is( 'stripe-v3', 'registered' ) ) {
-    wp_register_script('stripe-v3','https://js.stripe.com/v3/',
-        array(), null, true
-   );
-}
+        wp_localize_script( 'bb-date-js', 'BBDateData', array(
+            'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+            'token'   => wp_create_nonce( 'bb_wizard_slots_nonce' ),
+            'action'  => 'bb_get_slots',
+        ) );
 
-// 2) Encola stripe-v3 SOLO si no está ya en cola ni ya salió
-if ( ! wp_script_is( 'stripe-v3', 'enqueued' ) && ! wp_script_is( 'stripe-v3', 'done' ) ) {
-   wp_enqueue_script( 'stripe-v3' );
-}
+        // ===== Stripe orchestrator (bb-stripe.js) =====
+      
+$stripe_path = BB_PLUGIN_DIR . 'assets/js/wizard/bb-stripe.js';
+$stripe_ver  = file_exists( $stripe_path ) ? (string) filemtime( $stripe_path ) : $ver;
 
-// 3) Encola tu script SOLO si no está en cola (evita doble bb-stripe)
-if ( ! wp_script_is( 'bb-stripe', 'enqueued' ) && ! wp_script_is( 'bb-stripe', 'done' ) ) {
-    wp_enqueue_script('bb-stripe', BB_PLUGIN_URL . 'assets/js/wizard/bb-stripe.js',
-       array('stripe-v3'),
-       $ver,
-       true
-    );
-}
+wp_enqueue_script(
+    'bb-stripe',
+    BB_PLUGIN_URL . 'assets/js/wizard/bb-stripe.js',
+    array(),
+    $stripe_ver,
+    true
+);
+        // Loader Stripe v3 (guard)
+        $stripe_loader = <<<JS
+(function(){
+  try {
+    if (window.Stripe) { return; }
+    if (window.__bbStripeLoading) { return; }
+    window.__bbStripeLoading = true;
+    var s = document.createElement('script');
+    s.src = 'https://js.stripe.com/v3/';
+    s.async = true;
+    document.head.appendChild(s);
+  } catch(e) {}
+})();
+JS;
+        wp_add_inline_script( 'bb-stripe', $stripe_loader, 'before' );
 
-// 4) Localize SOLO una vez
-if ( ! wp_script_is( 'bb-stripe', 'done' ) ) {
+        // Localize Stripe SOLO una vez
+        if ( ! isset( $GLOBALS['bb_stripe_data_localized'] ) ) {
+            $GLOBALS['bb_stripe_data_localized'] = true;
 
-    $pk = function_exists('bb_stripe_public_key') ? bb_stripe_public_key() : '';
+            $pk = function_exists( 'bb_stripe_public_key' ) ? bb_stripe_public_key() : '';
 
-    // Evita duplicar la variable si alguien ya la imprimió
-    if ( ! isset( $GLOBALS['bb_stripe_data_localized'] ) ) {
-        $GLOBALS['bb_stripe_data_localized'] = true;
+            wp_localize_script( 'bb-stripe', 'BBStripeData', array(
+                'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
+                'publishableKey' => $pk,
+                'currency'       => 'usd',
+                'nonce'          => wp_create_nonce( 'bb_create_pi' ),
+            ) );
 
-        wp_localize_script('bb-stripe', 'BBStripeData', array(
-            'ajaxUrl'        => admin_url('admin-ajax.php'),
-            'publishableKey' => $pk,
-            'currency'       => 'usd',
-            'nonce'          => wp_create_nonce('bb_create_pi'),
-        ));
+            // ✅ Finalize booking (AJAX) después del pago
+            wp_localize_script( 'bb-stripe', 'BBFinalizeData', array(
+                'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+                'action'  => 'bb_finalize_booking',
+                'nonce'   => wp_create_nonce( 'bb_finalize_booking_nonce' ),
+            ) );
+        }
     }
-}
 
-    }
+    public function render(): string {
 
-    public function get_steps() {
-        return $this->steps;
-    }
+        // ✅ Si venimos de un booking confirmado → mostrar confirmación en el MISMO shortcode
+        if ( isset($_GET['bb_booking']) ) {
+            $booking_id = absint($_GET['bb_booking']);
+            return $this->render_booking_confirmation( $booking_id );
+        }
 
-    public function render() {
-
-        $state = $this->get_current_state();
-
+        // Wizard normal
         if ( ! class_exists( 'BB_Wizard_Shell' ) ) {
             require_once BB_PLUGIN_DIR . 'includes/UI/Wizard/bb-wizard-shell.php';
         }
 
-        $shell = new BB_Wizard_Shell( $state );
-        $html  = $shell->handle_request();
-
-        $this->save_state( $shell->get_state() );
-
-        return $html;
+        $shell = new BB_Wizard_Shell();
+        return (string) $shell->handle_request();
     }
 
-    public function get_current_state() {
-        return array();
-    }
+    /**
+     * ✅ Pantalla “Confirmation / Thank you” dentro del mismo shortcode
+     * (por ahora muestra ID; luego leemos DB y mostramos resumen completo)
+     */
+    private function render_booking_confirmation( int $booking_id ): string {
 
-    public function save_state( array $state ) {
-        // TODO
+        if ( ! $booking_id ) {
+            return '<div class="bb-error">Booking not found.</div>';
+        }
+
+        ob_start(); ?>
+        <div class="bb-booking-confirmation">
+            <h2>Thank you! Your booking is confirmed.</h2>
+            <p><strong>Booking ID:</strong> <?php echo esc_html( $booking_id ); ?></p>
+            <p>We’ve received your payment and your appointment has been successfully scheduled.</p>
+        </div>
+        <?php
+        return ob_get_clean();
     }
 }
 
-} // end class_exists
+} // end class_exists( 'Bubbles_Wizard' )
+
+ // end if ( ! class_exists( 'Bubbles_Wizard' ) )

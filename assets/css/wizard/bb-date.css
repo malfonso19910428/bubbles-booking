@@ -1,20 +1,250 @@
-/* Days disabled (past) */
-.bb-cal-day.is-disabled,
-.bb-cal-day.disabled,
-.bb-cal-day.is-disabled:hover {
-  opacity: .35;
+/* ==========================================================================
+   Bubbles Booking — Date + Slots (Astra theme-driven)
+   - No hardcoded fonts
+   - No color-mix
+   - No invented grays
+   - Uses ONLY Astra / Elementor / WP theme colors
+   ========================================================================== */
+
+/* =========================
+   0) Theme tokens (Astra first)
+   ========================= */
+.bb-date-time-grid{
+  /* Astra Global Palette */
+  --bb-primary: var(
+    --ast-global-color-0,
+    var(--e-global-color-accent,
+      var(--e-global-color-primary,
+        var(--wp--preset--color--primary, currentColor)
+      )
+    )
+  );
+
+  --bb-secondary: var(
+    --ast-global-color-1,
+    var(--e-global-color-secondary,
+      var(--wp--preset--color--secondary, currentColor)
+    )
+  );
+
+  --bb-text: var(
+    --ast-global-color-3,
+    var(--e-global-color-text,
+      var(--wp--preset--color--foreground, currentColor)
+    )
+  );
+}
+
+/* =========================
+   1) Layout
+   ========================= */
+.bb-date-time-grid{
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px){
+  .bb-date-time-grid{
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================
+   2) Slots layout (structure only)
+   ========================= */
+.bb-slots-panel{
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.bb-slot-group{
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.bb-slot-group-title{
+  margin-bottom: 10px;
+}
+
+.bb-slot-group-body{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 1100px){
+  .bb-slot-group-body{
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 520px){
+  .bb-slot-group-body{
+    grid-template-columns: 1fr;
+  }
+}
+
+.bb-slot-placeholder{
+  grid-column: 1 / -1;
+  padding: 8px 0;
+  opacity: .75;
+}
+
+/* =========================
+   3) Slot button (Astra colors only)
+   ========================= */
+.bb-slot-btn{
+  width: 100%;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+
+  font: inherit;
+  line-height: 1.1;
+
+  color: var(--bb-primary);
+  background: transparent;
+  border: 1px solid var(--bb-primary);
+
+  cursor: pointer;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.bb-slot-btn::before,
+.bb-slot-btn::after{
+  content: none !important;
+  display: none !important;
+}
+
+/* ===== HOVER (VISIBLE, Astra-style, no mixes) ===== */
+.bb-slot-btn:hover,
+.bb-slot-btn:focus{
+  background: var(--bb-primary);
+  border-color: var(--bb-primary);
+  color: var(--bb-text);
+  outline: none;
+}
+
+/* Keyboard focus */
+.bb-slot-btn:focus-visible{
+  outline: 2px solid var(--bb-secondary);
+  outline-offset: 2px;
+}
+
+.bb-slot-btn:active{
+  transform: translateY(1px);
+}
+
+/* Selected slot */
+.bb-slot-btn.is-selected{
+  background: var(--bb-primary);
+  border-color: var(--bb-primary);
+  color: var(--bb-text);
+}
+
+/* Disabled */
+.bb-slot-btn.is-disabled,
+.bb-wizard-buttons button.is-disabled{
+  opacity: .55;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
-/* Empty cells */
-.bb-cal-empty { opacity: .2; }
-
-/* Selected day */
-.bb-cal-day.is-selected {
-  outline: 2px solid #111;
+/* Hide select if still present */
+select#bb_time.bb-time-hidden-select{
+  position: absolute !important;
+  left: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  clip: rect(1px, 1px, 1px, 1px) !important;
+  clip-path: inset(50%) !important;
 }
 
-/* Optional: hover for clickable days only */
-button.bb-cal-day:hover {
-  filter: brightness(0.95);
+/* =========================
+   4) Flatpickr (theme-driven)
+   ========================= */
+.bb-date-time-grid .flatpickr-calendar{
+  background: transparent !important;
+  border: 1px solid var(--bb-primary) !important;
+   border-radius: 12px;
+ 
+  color: inherit !important;
+  font: inherit !important;
+}
+
+
+.bb-date-time-grid .flatpickr-calendar.inline{
+  margin-top: 10px;
+  border-radius: 12px;
+}
+
+/* Month arrows */
+.bb-date-time-grid .flatpickr-months .flatpickr-prev-month,
+.bb-date-time-grid .flatpickr-months .flatpickr-next-month{
+  color: inherit !important;
+}
+
+.bb-date-time-grid .flatpickr-months .flatpickr-prev-month:hover,
+.bb-date-time-grid .flatpickr-months .flatpickr-next-month:hover{
+  color: var(--bb-primary) !important;
+}
+
+.bb-date-time-grid .flatpickr-months svg{
+  fill: currentColor !important;
+}
+
+/* Day hover (no gray, Astra colors only) */
+.bb-date-time-grid .flatpickr-day:hover,
+.bb-date-time-grid .flatpickr-day:focus{
+ background: none !important;
+  border-color: var(--bb-primary) !important;
+  color: var(--bb-text) !important;
+}
+
+/* =========================
+   5) Flatpickr hard reset
+   ========================= */
+.bb-date-time-grid .flatpickr-calendar,
+.bb-date-time-grid .flatpickr-calendar *{
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+
+.bb-date-time-grid .flatpickr-innerContainer,
+.bb-date-time-grid .flatpickr-rContainer,
+.bb-date-time-grid .flatpickr-days,
+.bb-date-time-grid .dayContainer{
+  border: 0 !important;
+  background: transparent !important;
+}
+
+/* =========================
+   6) Flatpickr selected
+   ========================= */
+.bb-date-time-grid .flatpickr-day.selected,
+.bb-date-time-grid .flatpickr-day.startRange,
+.bb-date-time-grid .flatpickr-day.endRange,
+.bb-date-time-grid .flatpickr-day.selected.inRange,
+.bb-date-time-grid .flatpickr-day.startRange.inRange,
+.bb-date-time-grid .flatpickr-day.endRange.inRange,
+.bb-date-time-grid .flatpickr-day.selected:hover,
+.bb-date-time-grid .flatpickr-day.selected:focus{
+  background: var(--bb-primary) !important;
+  border-color: var(--bb-primary) !important;
+  color: var(--bb-text) !important;
+
+}
+
+/* Disabled days */
+.bb-date-time-grid .flatpickr-day.disabled{
+  opacity: .45 !important;
+  cursor: not-allowed !important;
 }

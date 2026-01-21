@@ -66,7 +66,7 @@ class BB_Confirm_Controller {
         }
 
         // Checkout FINAL desde STATE
-        require_once BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-confirm-checkout.php';
+       //require_once BB_PLUGIN_DIR . 'includes/UI/Wizard/class-bubbles-confirm-checkout.php';
         return Bubbles_Confirm_Checkout::handle_booking_submit_from_state( $state );
     }
 }

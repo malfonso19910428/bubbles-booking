@@ -10,7 +10,7 @@ class TechAvailabilityRepo {
 
     public function __construct() {
         global $wpdb;
-        $this->table = $wpdb->prefix . 'tTechAvailability';
+        $this->table = $wpdb->prefix . 'bb_tech_availability';
     }
 
     /**
@@ -19,7 +19,7 @@ class TechAvailabilityRepo {
     public static function create_table() {
         global $wpdb;
 
-        $table   = $wpdb->prefix . 'tTechAvailability';
+        $table   = $wpdb->prefix . 'bb_tech_availability';
         $charset = $wpdb->get_charset_collate();
 
         $sql = "CREATE TABLE $table (

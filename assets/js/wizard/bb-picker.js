@@ -1,400 +1,384 @@
 (function () {
+  'use strict';
 
-  function bbNormalizeLabel(str) {
-    if (!str) return '';
-    str = String(str).trim();
-    if (!str) return '';
-    str = str.toLowerCase();
-    return str.replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  function qs(sel, root) { return (root || document).querySelector(sel); }
+  function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  function escapeHtml(s) {
+    s = (s == null) ? "" : String(s);
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+            .replace(/"/g,"&quot;").replace(/'/g,"&#039;");
   }
 
-  function debounce(fn, ms) {
-    var t;
-    return function () {
-      var a = arguments, ctx = this;
-      clearTimeout(t);
-      t = setTimeout(function () { fn.apply(ctx, a); }, ms || 220);
-    };
+  function trim(s){ return (s || '').toString().trim(); }
+  function yearOk(y) { return /^\d{4}$/.test(trim(y)); }
+
+  function titleCase(s) {
+    s = trim(s).toLowerCase();
+    if (!s) return "";
+    return s.split(/\s+/).map(function (w) {
+      return w ? (w.charAt(0).toUpperCase() + w.slice(1)) : "";
+    }).join(" ");
   }
 
-  function filterContains(arr, q) {
-    q = (q || "").toLowerCase().trim();
-    if (!q) return arr.slice(0, 30);
-    var starts = arr.filter(function (x) { return x.toLowerCase().indexOf(q) === 0; });
-    var contains = arr.filter(function (x) { return x.toLowerCase().indexOf(q) > 0; });
-    return starts.concat(contains).slice(0, 30);
-  }
+  function startsWithFilter(list, q, limit) {
+    q = trim(q).toLowerCase();
+    limit = limit || 20;
+    if (!Array.isArray(list)) return [];
+    if (!q) return list.slice(0, limit);
 
-  // ✅ Helper: submit REAL para que viaje bb_vehicle_submit y el wizard avance
-  function submitVehicleForm(form) {
-    if (!form) return;
-
-    // ✅ Forzar POST + action limpio (evita /?s=...&bb_vehicle_submit=1)
-    try {
-      form.method = "post";
-      // Nota: si tu wizard vive en una URL con query, esto lo limpia igual
-      form.action = window.location.origin + window.location.pathname;
-    } catch (e) {}
-
-    // Asegurar bb_step=vehicle
-    var step = form.querySelector("input[name='bb_step']");
-    if (step) step.value = "vehicle";
-
-    // 1) Si existe el botón real submit del step vehicle -> click (mejor)
-    var submitBtn = form.querySelector("button[name='bb_vehicle_submit']");
-    if (submitBtn) {
-      submitBtn.click();
-      return;
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var v = String(list[i] || '');
+      if (v.toLowerCase().indexOf(q) === 0) {
+        out.push(v);
+        if (out.length >= limit) break;
+      }
     }
-
-    // 2) requestSubmit con botón temporal (incluye submitter)
-    if (typeof form.requestSubmit === "function") {
-      var tmpBtn = document.createElement("button");
-      tmpBtn.type = "submit";
-      tmpBtn.name = "bb_vehicle_submit";
-      tmpBtn.value = "1";
-      tmpBtn.style.display = "none";
-      form.appendChild(tmpBtn);
-      form.requestSubmit(tmpBtn);
-      tmpBtn.remove();
-      return;
-    }
-
-    // 3) Fallback viejo: inyectar hidden bb_vehicle_submit y submit()
-    var h = form.querySelector("input[name='bb_vehicle_submit']");
-    if (!h) {
-      h = document.createElement("input");
-      h.type = "hidden";
-      h.name = "bb_vehicle_submit";
-      form.appendChild(h);
-    }
-    h.value = "1";
-    form.submit();
+    return out;
   }
 
-  // ========= AJAX helper =========
+  function showSuggest(box, items, onPick) {
+    if (!box) return;
+    if (!items || !items.length) { box.style.display="none"; box.innerHTML=""; return; }
+    box.style.display = "block";
+    box.innerHTML = items.map(function (it) {
+      return '<div class="bb-suggest-item" data-val="' + escapeHtml(it) + '">' + escapeHtml(it) + '</div>';
+    }).join("");
+    qsa(".bb-suggest-item", box).forEach(function (el) {
+      el.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        onPick(el.getAttribute("data-val") || "");
+      });
+    });
+  }
+  function hideSuggest(box) { if (!box) return; box.style.display="none"; box.innerHTML=""; }
+
   function ajaxGet(action, params) {
     params = params || {};
     params.action = action;
-    params.nonce = (window.BBPickerData && BBPickerData.nonce) ? BBPickerData.nonce : '';
+    params.nonce  = BBPickerData.nonce;
 
-    var base = (window.BBPickerData && BBPickerData.ajaxUrl) ? BBPickerData.ajaxUrl : '';
-    if (!base) return Promise.resolve([]);
-
-    var qs = Object.keys(params).map(function (k) {
+    var url = BBPickerData.ajaxUrl + "?" + Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]);
     }).join("&");
 
-    return fetch(base + "?" + qs, { credentials: "same-origin" })
+    return fetch(url, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
-      .then(function (j) { return (j && j.success) ? (j.data || []) : []; })
-      .catch(function () { return []; });
+      .then(function (json) {
+        if (!json || !json.success) throw (json || new Error("ajax error"));
+        return json.data;
+      });
   }
 
-  // ========= Suggest core =========
-  function mountSuggest(root, input, box, itemsFetcher, nextInput, opts) {
-    if (!input || !box) return;
-    opts = opts || {};
+  function initVehiclePicker() {
+    if (typeof window.BBPickerData === "undefined" || !BBPickerData.ajaxUrl || !BBPickerData.nonce) return false;
 
-    function hideAll() {
-      root.querySelectorAll(".bb-suggest").forEach(function (el) {
-        el.style.display = "none";
+    var iYear  = qs("#bb-year");
+    var iMake  = qs("#bb-make");
+    var iModel = qs("#bb-model");
+    var iColor = qs("#bb-color");
+    var iType  = qs("#bb-vehicle-type");
+
+    var sYear  = qs("#bb-year-suggest");
+    var sMake  = qs("#bb-make-suggest");
+    var sModel = qs("#bb-model-suggest");
+    var sColor = qs("#bb-color-suggest");
+
+    var iJobTargetId = qs("#bb-job-target-id");
+    var jobTargetLbl = qs("#bb-job-target-label");
+
+    var form = iYear ? iYear.closest("form") : null;
+
+    if (!iYear || !iMake || !iModel || !iColor || !sYear || !sMake || !sModel || !sColor) return false;
+    if (iMake.dataset.bbBound === "1") return true;
+
+    var typingTimer = null;
+    var TYPING_DELAY = 160;
+
+    var makesAll = null;
+    var modelsByMakeYear = {};
+
+    var COLORS = [
+      "Black","White","Silver","Gray","Red","Blue","Green","Yellow","Orange","Brown","Beige","Gold",
+      "Purple","Pink","Burgundy","Maroon","Teal","Navy","Bronze","Champagne","Charcoal","Cream","Tan"
+    ];
+
+    var years = (function () {
+      var out = [];
+      var maxY = (new Date()).getFullYear() + 1;
+      for (var y = maxY; y >= 1980; y--) out.push(String(y));
+      return out;
+    })();
+
+    // ---- JobTarget/type helpers ----
+    function setJobTargetLabel(text) { if (jobTargetLbl) jobTargetLbl.textContent = text || ""; }
+    function clearJobTarget() { if (iJobTargetId) iJobTargetId.value = "0"; setJobTargetLabel(""); }
+
+    function fetchJobTargetBySlug(slug) {
+      slug = trim(slug);
+      if (!slug) return Promise.resolve(null);
+      return ajaxGet("bb_fetch_job_target", { industry: "auto", slug: slug })
+        .then(function (data) { return (data && data.item) ? data.item : null; })
+        .catch(function () { return null; });
+    }
+
+    function setJobTarget(item, mode) {
+      if (!item || !item.id) return;
+      if (iJobTargetId) iJobTargetId.value = String(item.id);
+      setJobTargetLabel((mode || "Detected") + " vehicle type: " + (item.label || item.slug || ""));
+    }
+
+    function fetchVehicleType(make, model, year) {
+      return ajaxGet("bb_fetch_vehicle_type", { make: trim(make), model: trim(model), year: trim(year) })
+        .then(function (data) { return (data && data.suggested) ? data.suggested : "other"; })
+        .catch(function () { return "other"; });
+    }
+
+    function applyTypeSuggested(suggested) {
+      if (!iType || !suggested) return;
+
+      // Solo bloquea autoselección si el usuario cambió el dropdown manualmente
+      if (iType.__bbTouched) return;
+
+      var opt = iType.querySelector('option[value="' + suggested + '"]');
+      if (opt) iType.value = suggested;
+
+      fetchJobTargetBySlug(suggested).then(function (jt) {
+        if (jt && jt.id) setJobTarget(jt, "Detected");
+        else clearJobTarget();
       });
     }
 
-    function pick(val) {
-      input.value = bbNormalizeLabel(val);
-      box.style.display = "none";
-      input.blur();
+    function ensureJobTargetNow(modeLabel) {
+      var make  = trim(iMake.value);
+      var year  = trim(iYear.value);
+      var model = trim(iModel.value);
+      if (!make || !yearOk(year) || !model) return Promise.resolve(false);
 
-      if (typeof opts.onPick === "function") {
-        try { opts.onPick(input.value); } catch (e) {}
+      var typeVal = iType ? trim(iType.value) : "";
+      if (typeVal) {
+        return fetchJobTargetBySlug(typeVal).then(function (jt) {
+          if (jt && jt.id) { setJobTarget(jt, modeLabel || "Selected"); return true; }
+          clearJobTarget(); return false;
+        });
       }
 
-      if (nextInput && nextInput.focus) {
-        setTimeout(function () {
-          nextInput.focus();
-          if (nextInput.select) nextInput.select();
-        }, 0);
-      }
+      return fetchVehicleType(make, model, year).then(function (suggested) {
+        applyTypeSuggested(suggested);
+        return true;
+      });
     }
 
-    var fire = debounce(function () {
-      var q = input.value || "";
-      itemsFetcher(q, function (list) {
-        if (!Array.isArray(list)) list = [];
-        if (!list.length) {
-          box.style.display = "none";
-          box.innerHTML = "";
-          return;
-        }
+    // ---- Data fetch ----
+    function ensureMakes() {
+      if (makesAll) return Promise.resolve(makesAll);
+      return ajaxGet("bb_fetch_makes", {})
+        .then(function (data) { makesAll = Array.isArray(data) ? data : []; return makesAll; })
+        .catch(function () { makesAll = []; return makesAll; });
+    }
 
-        box.innerHTML = list.map(function (x) {
-          var raw = String(x);
-          var label = bbNormalizeLabel(raw);
-          var safe = raw.replace(/"/g, '&quot;');
-          return '<div class="bb-opt" data-value="' + safe + '">' + label + '</div>';
-        }).join("");
+    function fetchModels(make, year) {
+      make = trim(make);
+      year = trim(year);
+      if (!make || !yearOk(year)) return Promise.resolve([]);
 
-        box.style.display = "block";
+      var key = make.toLowerCase() + "|" + year;
+      if (modelsByMakeYear[key]) return Promise.resolve(modelsByMakeYear[key]);
 
-        box.querySelectorAll(".bb-opt").forEach(function (el) {
-          el.addEventListener("click", function () {
-            hideAll();
-            var raw = el.getAttribute("data-value") || el.textContent;
-            pick(raw);
+      return ajaxGet("bb_fetch_models", { make: make, year: year })
+        .then(function (data) {
+          var models = Array.isArray(data) ? data : [];
+          modelsByMakeYear[key] = models;
+          return models;
+        })
+        .catch(function () { modelsByMakeYear[key] = []; return []; });
+    }
+
+    // ---- Year autocomplete ----
+    function renderYearSuggest() {
+      var q = trim(iYear.value).replace(/[^\d]/g,'').slice(0,4);
+      if (iYear.value !== q) iYear.value = q;
+
+      var list = startsWithFilter(years, q, 20);
+      showSuggest(sYear, list, function (v) {
+        iYear.value = v;
+        hideSuggest(sYear);
+        clearJobTarget();
+        iMake.focus();
+      });
+
+      if (yearOk(iYear.value)) hideSuggest(sYear);
+    }
+
+    iYear.addEventListener("input", function () {
+      clearJobTarget();
+      hideSuggest(sModel);
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(renderYearSuggest, TYPING_DELAY);
+
+      if (yearOk(iYear.value)) {
+        hideSuggest(sYear);
+        iMake.focus();
+      }
+    });
+
+    iYear.addEventListener("focus", renderYearSuggest);
+    iYear.addEventListener("blur", function () { setTimeout(function(){ hideSuggest(sYear); },150); });
+
+    // ---- Make autocomplete ----
+    iMake.addEventListener("input", function () {
+      clearJobTarget();
+      clearTimeout(typingTimer);
+
+      typingTimer = setTimeout(function () {
+        ensureMakes().then(function (all) {
+          var filtered = startsWithFilter(all, iMake.value, 20);
+          showSuggest(sMake, filtered, function (v) {
+            iMake.value = titleCase(v);
+            hideSuggest(sMake);
+
+            // reset model/type/jobtarget
+            iModel.value = "";
+            hideSuggest(sModel);
+            if (iType) { iType.value = ""; iType.__bbTouched = false; }
+            clearJobTarget();
+
+            iModel.focus();
           });
         });
-      });
-    }, 250);
-
-    input.addEventListener("input", fire);
-    input.addEventListener("focus", function () { fire(); });
-
-    input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        var first = box.querySelector(".bb-opt");
-        if (first) {
-          hideAll();
-          var raw = first.getAttribute("data-value") || first.textContent;
-          pick(raw);
-        } else if (nextInput) {
-          hideAll();
-          input.blur();
-          setTimeout(function () {
-            nextInput.focus();
-            if (nextInput.select) nextInput.select();
-          }, 0);
-        }
-      } else if (e.key === "Escape") {
-        box.style.display = "none";
-      }
+      }, TYPING_DELAY);
     });
 
-    document.addEventListener("click", function (e) {
-      if (!box.contains(e.target) && e.target !== input) {
-        box.style.display = "none";
-      }
+    iMake.addEventListener("blur", function () {
+      setTimeout(function(){ hideSuggest(sMake); },150);
+      if (trim(iMake.value)) iMake.value = titleCase(iMake.value);
     });
-  }
 
-  // ========= Data =========
-  var years = [], maxY = (new Date()).getFullYear() + 1;
-  for (var y = maxY; y >= 1980; --y) years.push(String(y));
+    // ---- Model autocomplete (FIX TYPE AUTOSELECT HERE) ----
+    function showModelsDropdown(list, makeRaw, yearRaw) {
+      showSuggest(sModel, list, function (pickedModelRaw) {
+        // ✅ Guardamos "bonito" para UI
+        iModel.value = titleCase(pickedModelRaw);
+        hideSuggest(sModel);
 
-  var popularMakes = [
-    "Toyota", "Tesla", "Ford", "Chevrolet", "Honda", "Nissan", "Hyundai", "Kia", "BMW", "Mercedes-Benz",
-    "Volkswagen", "Mazda", "Subaru", "Audi", "Lexus", "Jeep", "Dodge", "GMC", "Ram", "Cadillac",
-    "Acura", "Infiniti", "Lincoln", "Volvo", "Porsche", "Land Rover", "Mini", "Mitsubishi",
-    "Buick", "Chrysler", "Jaguar"
-  ];
+        // ✅ VEHICLE TYPE: usar valores RAW (no Title Case) para llamar al endpoint
+        // make: usamos el input real (puede ser TitleCase) pero también puede funcionar.
+        // si quieres 100% robusto, manda makeRaw que viene del input (sin tocar).
+        var makeForApi  = makeRaw;        // RAW
+        var modelForApi = pickedModelRaw; // RAW
+        var yearForApi  = yearRaw;
 
-  var popularColors = [
-    "Black", "White", "Silver", "Gray", "Grey", "Blue", "Dark Blue", "Navy", "Red", "Maroon",
-    "Burgundy", "Green", "Dark Green", "Olive", "Beige", "Tan", "Brown", "Gold", "Yellow",
-    "Orange", "Purple", "Pink", "Pearl", "Ivory", "Charcoal", "Teal", "Turquoise", "Bronze",
-    "Copper", "Champagne", "Gunmetal", "Matte Black", "Gloss Black", "Metallic Blue"
-  ];
-
-  // ========= Cache =========
-  var vpAllMakes = null;
-  var vpModelsCache = {};
-  var vpModelsPending = {};
-
-  function fetchAllMakes() {
-    if (vpAllMakes) return Promise.resolve(vpAllMakes);
-    return ajaxGet("bb_fetch_makes", {}).then(function (list) {
-      if (!Array.isArray(list) || !list.length) {
-        vpAllMakes = popularMakes.slice(0);
-        return vpAllMakes;
-      }
-      vpAllMakes = list;
-      return vpAllMakes;
-    });
-  }
-
-  function rankMakes(list, q) {
-    q = (q || "").toLowerCase().trim();
-    if (!q) return popularMakes.slice(0, 40);
-    var exact = [], starts = [], contains = [];
-    list.forEach(function (m) {
-      var ml = m.toLowerCase();
-      if (ml.indexOf(q) === -1) return;
-      if (ml === q) exact.push(m);
-      else if (ml.indexOf(q) === 0) starts.push(m);
-      else contains.push(m);
-    });
-    return exact.concat(starts, contains).slice(0, 50);
-  }
-
-  function modelKey(make, year) {
-    return String(make || "").trim().toLowerCase() + "|" + String(year || "").trim();
-  }
-
-  function fetchModels(make, year) {
-    if (!make || !year) return Promise.resolve([]);
-    var key = modelKey(make, year);
-
-    if (vpModelsCache[key]) return Promise.resolve(vpModelsCache[key]);
-    if (vpModelsPending[key]) return vpModelsPending[key];
-
-    vpModelsPending[key] = ajaxGet("bb_fetch_models", { make: make, year: year })
-      .then(function (list) {
-        if (!Array.isArray(list)) list = [];
-        vpModelsCache[key] = list;
-        return list;
-      })
-      .catch(function () { return []; })
-      .finally(function () { delete vpModelsPending[key]; });
-
-    return vpModelsPending[key];
-  }
-
-  function prefetchModels(iMake, iYear) {
-    var mk = (iMake && iMake.value || "").trim();
-    var yr = (iYear && iYear.value || "").trim();
-    if (!mk || !yr) return;
-    fetchModels(mk, yr);
-  }
-
-  function initOne(root) {
-    if (!root) root = document;
-
-    var iYear = root.querySelector("#bb-year"),
-      sYear = root.querySelector("#bb-year-suggest");
-    var iMake = root.querySelector("#bb-make"),
-      sMake = root.querySelector("#bb-make-suggest");
-    var iModel = root.querySelector("#bb-model"),
-      sModel = root.querySelector("#bb-model-suggest");
-    var iColor = root.querySelector("#bb-color"),
-      sColor = root.querySelector("#bb-color-suggest");
-
-    if (!iYear || !iMake || !iModel || !iColor) return;
-
-    // ✅ Save ONLY when the real submit happens (manual vehicle submit)
-    var form = iYear.closest("form");
-    if (form && !form.__bbVehBound) {
-      form.__bbVehBound = true;
-
-      form.addEventListener("submit", function (e) {
-        // ✅ Solo en step vehicle
-        var step = form.querySelector("input[name='bb_step']");
-        if (!step || String(step.value || "") !== "vehicle") return;
-
-        var submitter = e.submitter || document.activeElement;
-
-        // Guardar si:
-        // - submitter es el botón real bb_vehicle_submit
-        // - o si existe hidden bb_vehicle_submit=1 (fallback)
-        var shouldMark = false;
-
-        if (submitter && submitter.name === "bb_vehicle_submit") {
-          shouldMark = true;
-        } else {
-          var h = form.querySelector("input[name='bb_vehicle_submit']");
-          if (h && String(h.value || "") === "1") shouldMark = true;
+        // Resetea touched para permitir autoselect si el usuario no lo tocó
+        if (iType && !iType.__bbTouched) {
+          // keep false
         }
 
-        if (!shouldMark) return;
-
-        // ✅ Evita que el hidden se quede pegado para submits futuros
-        var h2 = form.querySelector("input[name='bb_vehicle_submit']");
-        if (h2) h2.value = "";
-      });
-    }
-
-    // Year
-    mountSuggest(root, iYear, sYear, function (q, done) {
-      done(filterContains(years, q));
-    }, iMake, {
-      onPick: function () { prefetchModels(iMake, iYear); }
-    });
-
-    // Make
-    mountSuggest(root, iMake, sMake, function (q, done) {
-      q = (q || "").trim();
-      if (!q) { done(popularMakes); return; }
-
-      if (vpAllMakes) { done(rankMakes(vpAllMakes, q)); return; }
-
-      fetchAllMakes().then(function (all) {
-        done(rankMakes(all, q));
-      }).catch(function () {
-        done(popularMakes);
-      });
-    }, iModel, {
-      onPick: function () { prefetchModels(iMake, iYear); }
-    });
-
-    iYear.addEventListener("blur", function () { prefetchModels(iMake, iYear); });
-    iMake.addEventListener("blur", function () { prefetchModels(iMake, iYear); });
-
-    // Model
-    mountSuggest(root, iModel, sModel, function (q, done) {
-      var mk = (iMake.value || "").trim();
-      var yr = (iYear.value || "").trim();
-      if (!mk || !yr) { done([]); return; }
-
-      var key = modelKey(mk, yr);
-
-      function rankModels(list, q) {
-        list = list || [];
-        q = (q || "").toLowerCase().trim();
-        if (!q) return list.slice(0, 50);
-        var exact = [], starts = [], contains = [];
-        list.forEach(function (m) {
-          var ml = m.toLowerCase();
-          if (ml === q) exact.push(m);
-          else if (ml.indexOf(q) === 0) starts.push(m);
-          else if (ml.indexOf(q) > 0) contains.push(m);
+        fetchVehicleType(makeForApi, modelForApi, yearForApi).then(function (suggested) {
+          applyTypeSuggested(suggested);
         });
-        return exact.concat(starts, contains).slice(0, 50);
-      }
 
-      if (vpModelsCache[key]) {
-        done(rankModels(vpModelsCache[key], q));
-        return;
-      }
-
-      fetchModels(mk, yr).then(function (list) {
-        done(rankModels(list, q));
-      }).catch(function () {
-        done([]);
-      });
-    }, iColor);
-
-    // Color
-    mountSuggest(root, iColor, sColor, function (q, done) {
-      done(filterContains(popularColors, q));
-    }, null);
-
-    // Help
-    var btnHelp = root.querySelector("#bb-help");
-    var helpMsg = root.querySelector("#bb-help-msg");
-    if (btnHelp && helpMsg) {
-      btnHelp.addEventListener("click", function () {
-        helpMsg.style.display = (helpMsg.style.display === "none" || !helpMsg.style.display) ? "block" : "none";
+        // ✅ salto a color
+        iColor.focus();
       });
     }
 
-    // Reset model when year/make change
-    iYear.addEventListener("input", function () {
-      iModel.value = "";
-      if (sModel) sModel.style.display = "none";
+    iModel.addEventListener("focus", function () {
+      var make = trim(iMake.value);
+      var year = trim(iYear.value);
+
+      if (!yearOk(year) || !make) { hideSuggest(sModel); return; }
+
+      fetchModels(make, year).then(function (models) {
+        var list = (models || []).slice(0, 20);
+        showModelsDropdown(list, make, year);
+      });
     });
-    iMake.addEventListener("input", function () {
-      iModel.value = "";
-      if (sModel) sModel.style.display = "none";
+
+    iModel.addEventListener("input", function () {
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(function () {
+        var make = trim(iMake.value);
+        var year = trim(iYear.value);
+        if (!make || !yearOk(year)) { hideSuggest(sModel); return; }
+
+        fetchModels(make, year).then(function (models) {
+          var filtered = startsWithFilter(models, iModel.value, 20);
+          showModelsDropdown(filtered, make, year);
+        });
+      }, TYPING_DELAY);
     });
+
+    iModel.addEventListener("blur", function () {
+      setTimeout(function(){ hideSuggest(sModel); },150);
+      if (trim(iModel.value)) iModel.value = titleCase(iModel.value);
+      setTimeout(function(){ ensureJobTargetNow("Detected"); }, 50);
+    });
+
+    // ---- Color autocomplete ----
+    function renderColorSuggest() {
+      var filtered = startsWithFilter(COLORS, iColor.value, 20);
+      showSuggest(sColor, filtered, function (v) {
+        iColor.value = titleCase(v);
+        hideSuggest(sColor);
+      });
+    }
+
+    iColor.addEventListener("input", function () {
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(renderColorSuggest, TYPING_DELAY);
+    });
+    iColor.addEventListener("focus", renderColorSuggest);
+    iColor.addEventListener("blur", function () {
+      setTimeout(function(){ hideSuggest(sColor); },150);
+      if (trim(iColor.value)) iColor.value = titleCase(iColor.value);
+    });
+
+    // ---- Type manual change ----
+    if (iType) {
+      iType.addEventListener("change", function () {
+        iType.__bbTouched = true;
+        var val = trim(iType.value);
+        if (!val) { clearJobTarget(); return; }
+        fetchJobTargetBySlug(val).then(function (jt) {
+          if (jt && jt.id) setJobTarget(jt, "Selected");
+          else clearJobTarget();
+        });
+      });
+    }
+
+    // ---- Submit safeguard ----
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        var cur = iJobTargetId ? parseInt(iJobTargetId.value || "0", 10) : 0;
+        if (cur > 0) return;
+        e.preventDefault();
+        ensureJobTargetNow("Detected").then(function(){ form.submit(); });
+      });
+    }
+
+    // ---- Normalize existing values ----
+    if (trim(iMake.value)) iMake.value = titleCase(iMake.value);
+    if (trim(iModel.value)) iModel.value = titleCase(iModel.value);
+    if (trim(iColor.value)) iColor.value = titleCase(iColor.value);
+
+    // ---- Bound marker ----
+    iMake.dataset.bbBound = "1";
+    log("[BB VEHICLE JS] bound OK", { ajaxUrl: BBPickerData.ajaxUrl });
+
+    return true;
   }
 
-  window.BB_PICKER_INIT = function (scope) { initOne(scope || document); };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () { initOne(document); });
-  } else {
-    initOne(document);
+  function start() {
+    if (initVehiclePicker()) return;
+    var tries = 0;
+    var t = setInterval(function () {
+      tries++;
+      if (initVehiclePicker() || tries >= 40) clearInterval(t);
+    }, 250);
   }
+
+  document.addEventListener("DOMContentLoaded", start);
+  window.addEventListener("load", start);
 
 })();

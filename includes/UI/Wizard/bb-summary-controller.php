@@ -151,8 +151,8 @@ final class BB_Summary_Controller {
 
         if ( $service_id <= 0 ) return array();
 
-        $repo_file = BB_PLUGIN_DIR . 'includes/domain/catalog/services/bb-services-repo.php';
-        $svc_file  = BB_PLUGIN_DIR . 'includes/domain/catalog/services/bb-services-service.php';
+        $repo_file = BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/services/bb-services-repo.php';
+        $svc_file  = BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/services/bb-services-service.php';
 
         if ( file_exists( $repo_file ) ) require_once $repo_file;
         if ( file_exists( $svc_file ) )  require_once $svc_file;
@@ -241,8 +241,8 @@ final class BB_Summary_Controller {
 
         $addon_ids = array_values( array_unique( array_map( 'intval', (array) $addon_ids ) ) );
 
-        $repo_file = BB_PLUGIN_DIR . 'includes/domain/catalog/addons/bb-addons-repo.php';
-        $svc_file  = BB_PLUGIN_DIR . 'includes/domain/catalog/addons/bb-addons-service.php';
+        $repo_file = BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/addons/bb-addons-repo.php';
+        $svc_file  = BB_PLUGIN_DIR . 'includes/domain/admin/catalog-services-addons/addons/bb-addons-service.php';
 
         if ( file_exists( $repo_file ) ) require_once $repo_file;
         if ( file_exists( $svc_file ) )  require_once $svc_file;
@@ -316,90 +316,108 @@ final class BB_Summary_Controller {
 
     public function get_view_data( array $state ): array {
 
-        $pkg_id        = $this->get_package_id_from_state( $state );
-        $addon_ids     = $this->get_addon_ids_from_state( $state );
-        $vehicle_label = $this->get_vehicle_label( $state );
-        $address       = $this->get_address_from_state( $state );
-        $date          = $this->get_date_from_state( $state );
+    $pkg_id        = $this->get_package_id_from_state( $state );
+    $addon_ids     = $this->get_addon_ids_from_state( $state );
+    $vehicle_label = $this->get_vehicle_label( $state );
+    $address       = $this->get_address_from_state( $state );
+    $date          = $this->get_date_from_state( $state );
 
-        // ✅ Customer
-        $customer      = $this->get_customer_from_state( $state );
+    // ✅ Customer
+    $customer      = $this->get_customer_from_state( $state );
 
-        $service = array();
-        if ( $pkg_id > 0 ) {
-            $service = $this->resolve_service( $pkg_id );
-        }
-
-        $addons = $this->resolve_addons( $addon_ids );
-
-        $has_service = ! empty( $service ) && ( (int)( $service['id'] ?? 0 ) > 0 );
-        $has_addons  = ! empty( $addons );
-
-        $base = $has_service ? $this->to_money( $service['price'] ?? 0 ) : 0.0;
-
-        $adds = 0.0;
-        foreach ( (array) $addons as $a ) {
-            if ( ! is_array( $a ) ) continue;
-            $adds += $this->to_money( $a['price'] ?? 0 );
-        }
-
-        $total = $base + $adds;
-
-        $job = array(
-            'subject' => array(
-                'label' => (string) $vehicle_label,
-            ),
-            'service' => array(
-                'id'    => (int) ( $service['id'] ?? 0 ),
-                'name'  => (string) ( $service['name'] ?? ( $service['label'] ?? '' ) ),
-                'label' => (string) ( $service['label'] ?? '' ),
-                'price' => (float)  $this->to_money( $service['price'] ?? 0 ),
-                'meta'  => (array)  ( $service['meta'] ?? array() ),
-            ),
-            'addons'  => $addons,
-            'address' => $address,
-            'schedule' => array(
-                'date'       => (string) ( $date['date'] ?? '' ),
-                'date_label' => $this->format_date_label( (string) ( $date['date'] ?? '' ) ),
-                'time'       => (string) ( $date['time'] ?? '' ),
-                'slot_label' => (string) ( $date['slot_label'] ?? '' ),
-                'timezone'   => (string) ( $date['timezone'] ?? '' ),
-            ),
-
-            // ✅ Customer agregado para sidebar
-            'customer' => array(
-                'name'  => (string) ( $customer['name'] ?? '' ),
-                'phone' => (string) ( $customer['phone'] ?? '' ),
-                'email' => (string) ( $customer['email'] ?? '' ),
-                'notes' => (string) ( $customer['notes'] ?? '' ),
-            ),
-
-            'cost'    => array(
-                'total' => (float) $total,
-            ),
-        );
-
-        $has_customer = (
-            trim((string)($customer['name'] ?? '')) !== '' ||
-            trim((string)($customer['phone'] ?? '')) !== '' ||
-            trim((string)($customer['email'] ?? '')) !== ''
-        );
-
-        return array(
-            'jobs' => array( $job ),
-            'totals' => array(
-                'grand_total' => (float) $total,
-            ),
-            'meta' => array(
-                'has_vehicle'   => ( trim( (string) $vehicle_label ) !== '' && strtolower(trim($vehicle_label)) !== 'vehicle' ),
-                'has_service'   => $has_service,
-                'has_addons'    => $has_addons,
-                'has_address'   => ( trim((string)($address['line1'] ?? '')) !== '' ),
-                'has_date'      => ( trim((string)($date['date'] ?? '')) !== '' && trim((string)($date['time'] ?? '')) !== '' ),
-                'has_customer'  => $has_customer,
-                'pkg_id'        => $pkg_id,
-                'addon_ids'     => $addon_ids,
-            ),
-        );
+    $service = array();
+    if ( $pkg_id > 0 ) {
+        $service = $this->resolve_service( $pkg_id );
     }
+
+    $addons = $this->resolve_addons( $addon_ids );
+
+    $has_service = ! empty( $service ) && ( (int)( $service['id'] ?? 0 ) > 0 );
+    $has_addons  = ! empty( $addons );
+
+    /**
+     * ✅ IMPORTANT:
+     * Summary NO recalcula el precio.
+     * Usa el precio FINAL guardado en el state por el step Package:
+     *   $state['package']['price']
+     */
+    $base = 0.0;
+
+    if ( isset( $state['package']['price'] ) ) {
+        // precio final (base + add tier) ya calculado por Pricing Engine
+        $base = $this->to_money( (float) $state['package']['price'] );
+    } elseif ( $has_service ) {
+        // fallback (por si llegas a summary sin haber pasado por package)
+        $base = $this->to_money( $service['price'] ?? 0 );
+    }
+
+    $adds = 0.0;
+    foreach ( (array) $addons as $a ) {
+        if ( ! is_array( $a ) ) continue;
+        $adds += $this->to_money( $a['price'] ?? 0 );
+    }
+
+    $total = $base + $adds;
+
+    $job = array(
+        'subject' => array(
+            'label' => (string) $vehicle_label,
+        ),
+        'service' => array(
+            'id'    => (int) ( $service['id'] ?? 0 ),
+            'name'  => (string) ( $service['name'] ?? ( $service['label'] ?? '' ) ),
+            'label' => (string) ( $service['label'] ?? '' ),
+
+            // ✅ mostrar el precio final (no el base)
+            'price' => (float) $base,
+
+            'meta'  => (array) ( $service['meta'] ?? array() ),
+        ),
+        'addons'  => $addons,
+        'address' => $address,
+        'schedule' => array(
+            'date'       => (string) ( $date['date'] ?? '' ),
+            'date_label' => $this->format_date_label( (string) ( $date['date'] ?? '' ) ),
+            'time'       => (string) ( $date['time'] ?? '' ),
+            'slot_label' => (string) ( $date['slot_label'] ?? '' ),
+            'timezone'   => (string) ( $date['timezone'] ?? '' ),
+        ),
+
+        // ✅ Customer agregado para sidebar
+        'customer' => array(
+            'name'  => (string) ( $customer['name'] ?? '' ),
+            'phone' => (string) ( $customer['phone'] ?? '' ),
+            'email' => (string) ( $customer['email'] ?? '' ),
+            'notes' => (string) ( $customer['notes'] ?? '' ),
+        ),
+
+        'cost'    => array(
+            'total' => (float) $total,
+        ),
+    );
+
+    $has_customer = (
+        trim((string)($customer['name'] ?? '')) !== '' ||
+        trim((string)($customer['phone'] ?? '')) !== '' ||
+        trim((string)($customer['email'] ?? '')) !== ''
+    );
+
+    return array(
+        'jobs' => array( $job ),
+        'totals' => array(
+            'grand_total' => (float) $total,
+        ),
+        'meta' => array(
+            'has_vehicle'   => ( trim( (string) $vehicle_label ) !== '' && strtolower(trim($vehicle_label)) !== 'vehicle' ),
+            'has_service'   => $has_service,
+            'has_addons'    => $has_addons,
+            'has_address'   => ( trim((string)($address['line1'] ?? '')) !== '' ),
+            'has_date'      => ( trim((string)($date['date'] ?? '')) !== '' && trim((string)($date['time'] ?? '')) !== '' ),
+            'has_customer'  => $has_customer,
+            'pkg_id'        => $pkg_id,
+            'addon_ids'     => $addon_ids,
+        ),
+    );
+}
+
 }

@@ -2,8 +2,8 @@
 
   function initStripePaymentStep() {
 
-    if (typeof Stripe === 'undefined') return false;
-    if (typeof BBStripeData === 'undefined' || !BBStripeData.publishableKey) return false;
+    if (typeof Stripe === 'undefined') { console.log('[BB] Stripe undefined'); return false; }
+    if (typeof BBStripeData === 'undefined' || !BBStripeData.publishableKey) { console.log('[BB] BBStripeData missing'); return false; }
 
     var form        = document.getElementById('bb-wizard-form');
     var payBtn      = document.getElementById('bb-pay-inline');
@@ -11,26 +11,20 @@
     var errorEl     = document.getElementById('bb-stripe-errors');
     var amountInput = document.getElementById('bb_total_amount');
 
-    if (!form || !payBtn || !cardDiv || !amountInput) return false;
+    if (!form || !payBtn || !cardDiv || !amountInput) { console.log('[BB] missing DOM', {form, payBtn, cardDiv, amountInput}); return false; }
+    if (cardDiv.offsetHeight === 0) { console.log('[BB] cardDiv not visible yet'); return false; }
 
-    // Si el contenedor no es visible, Stripe no se monta bien
-    if (cardDiv.offsetHeight === 0) return false;
-
-    // dataset puede no existir en browsers viejos (raro, pero seguro)
     var ds = cardDiv.dataset || {};
     if (ds.bbStripeMounted === '1') return true;
-
-    // Marca como montado
     if (cardDiv.dataset) cardDiv.dataset.bbStripeMounted = '1';
 
     var stripe   = Stripe(BBStripeData.publishableKey);
     var elements = stripe.elements();
     var card     = elements.create('card');
 
-    try {
-      card.mount(cardDiv);
-    } catch (e) {
-      // Silencioso: permitimos reintento
+    try { card.mount(cardDiv); }
+    catch (e) {
+      console.error('[BB] card.mount error', e);
       if (cardDiv.dataset) cardDiv.dataset.bbStripeMounted = '0';
       return false;
     }
@@ -40,7 +34,42 @@
       errorEl.textContent = event.error ? event.error.message : '';
     });
 
-    // Evita duplicar listener
+    function finalizeBookingAfterPay(paymentIntentId) {
+      console.log('[BB] finalizeBookingAfterPay start', paymentIntentId);
+
+      if (typeof BBFinalizeData === 'undefined' || !BBFinalizeData.ajaxUrl) {
+        return Promise.reject(new Error('Finalize config missing.'));
+      }
+
+      var fd = new FormData();
+      fd.append('action', BBFinalizeData.action || 'bb_finalize_booking');
+      fd.append('nonce',  BBFinalizeData.nonce || '');
+      fd.append('payment_intent_id', paymentIntentId || '');
+
+      return fetch(BBFinalizeData.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      })
+      .then(function(r){
+        console.log('[BB] finalize HTTP', r.status);
+        return r.text().then(function(t){
+          // Si por alguna razón viene HTML, lo veremos aquí
+          console.log('[BB] finalize RAW(0..200)', t.slice(0, 200));
+          try { return JSON.parse(t); }
+          catch(e){ throw new Error('Finalize returned non-JSON'); }
+        });
+      })
+      .then(function(json){
+        console.log('[BB] finalize JSON', json);
+        if (!json || !json.success || !json.data || !json.data.redirect) {
+          var msg = (json && json.data && json.data.message) ? json.data.message : 'Finalize failed.';
+          throw new Error(msg);
+        }
+        return json.data.redirect;
+      });
+    }
+
     if (!payBtn.dataset) payBtn.dataset = {};
     if (payBtn.dataset.bbStripeBound === '1') return true;
     payBtn.dataset.bbStripeBound = '1';
@@ -67,6 +96,8 @@
       var originalText = payBtn.textContent;
       payBtn.textContent = 'Processing...';
 
+      console.log('[BB] start payment', {amount, name, email, phone});
+
       var data = new FormData();
       data.append('action', 'bb_create_payment_intent');
       data.append('amount', String(amount));
@@ -80,6 +111,8 @@
       })
       .then(function (r) { return r.json(); })
       .then(function (json) {
+        console.log('[BB] PI response', json);
+
         if (!json || !json.success || !json.data || !json.data.client_secret) {
           var msg = (json && json.data && json.data.message) ? json.data.message : 'Payment could not be started.';
           throw new Error(msg);
@@ -93,6 +126,8 @@
         });
       })
       .then(function (result) {
+        console.log('[BB] confirm result', result);
+
         if (!result || result.error) {
           throw new Error((result && result.error && result.error.message) ? result.error.message : 'Payment failed.');
         }
@@ -100,7 +135,9 @@
         var pi = result.paymentIntent;
         if (!pi) throw new Error('Payment failed.');
 
-        if (pi.status !== 'succeeded' && pi.status !== 'processing') {
+        console.log('[BB] paymentIntent', pi.id, pi.status);
+
+        if (pi.status !== 'succeeded') {
           throw new Error('Payment could not be completed.');
         }
 
@@ -110,11 +147,19 @@
 
         if (doneField) doneField.value = '1';
         if (piField)   piField.value = (pi.id || '');
-        if (stField)   stField.value = (pi.status === 'succeeded') ? 'paid' : pi.status;
+        if (stField)   stField.value = 'paid';
 
-        form.submit();
+        return finalizeBookingAfterPay(pi.id).then(function(redirectUrl){
+          console.log('[BB] redirectUrl', redirectUrl);
+
+          // Redirect robusto
+          setTimeout(function(){
+            window.location.assign(redirectUrl);
+          }, 50);
+        });
       })
       .catch(function (err) {
+        console.error('[BB] payment flow error', err);
         if (errorEl) {
           errorEl.textContent = (err && err.message) ? err.message : 'Payment error.';
         }
